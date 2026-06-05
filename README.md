@@ -1,6 +1,6 @@
-# Novel2ScriptConverter
+# NovelScriptConverter
 
-基于 `FastAPI + Vue 3 + Vite` 的小说改编剧本工作台原型。
+这是一个基于 `FastAPI + Vue 3 + Vite` 的小说转剧本工作台原型。
 
 ## 目录结构
 
