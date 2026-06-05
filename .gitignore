@@ -1,0 +1,21 @@
+# Frontend dependencies and build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Runtime data
+backend/data/
+
+# Local environment
+.env
+.env.*
+
+# Project docs not for remote upload
+开发文档.md
+接口文档.md
