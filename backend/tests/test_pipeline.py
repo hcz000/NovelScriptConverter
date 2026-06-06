@@ -153,7 +153,7 @@ def test_generate_project_script_uses_valid_llm_draft(temp_store, monkeypatch) -
         generated["metadata"]["conflict_keywords"] = ["LLM冲突"]
         return generated
 
-    monkeypatch.setattr("app.services.pipeline.llm_generate_script", fake_llm_generate)
+    monkeypatch.setattr("app.services.tasks.llm_generate_script", fake_llm_generate)
 
     generate_project_script(temp_store, project["project_id"], task["task_id"], include_report=True)
 
@@ -202,7 +202,7 @@ def test_generate_project_script_falls_back_when_llm_draft_is_missing(temp_store
     }
     temp_store.upsert_project(project)
     temp_store.upsert_task(task)
-    monkeypatch.setattr("app.services.pipeline.llm_generate_script", lambda *_args: None)
+    monkeypatch.setattr("app.services.tasks.llm_generate_script", lambda *_args: None)
 
     generate_project_script(temp_store, project["project_id"], task["task_id"], include_report=True)
 
