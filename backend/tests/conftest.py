@@ -17,7 +17,7 @@ from app.main import http_exception_handler, unhandled_exception_handler
 
 @pytest.fixture()
 def temp_store(tmp_path: Path) -> DataStore:
-    return DataStore(tmp_path / "store.json")
+    return DataStore(tmp_path / "studio.sqlite3")
 
 
 @pytest.fixture()

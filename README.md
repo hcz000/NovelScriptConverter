@@ -29,7 +29,7 @@ Implemented today:
 Important constraints:
 
 - LLM generation and rewrite require `LLM_PROVIDER=openai` and `OPENAI_API_KEY`; otherwise the backend falls back to deterministic prototype rules
-- Data is stored in local JSON, not a database
+- Data is stored in SQLite under `backend/data/studio.sqlite3`
 - Tasks run through FastAPI `BackgroundTasks`
 - The frontend polls task state instead of using streaming or websockets
 
@@ -73,7 +73,8 @@ pytest -q --basetemp .test-tmp -p no:cacheprovider
 
 ## Repository notes
 
-- Runtime project data is written under `backend/data/`
+- Runtime project data is written to `backend/data/studio.sqlite3`
+- Existing `backend/data/store.json` data is imported into SQLite on first startup when the database is empty
 - Export files are generated under `backend/data/exports/`
 - Uploaded source files are stored under `backend/data/uploads/`
 
@@ -84,5 +85,4 @@ The following are not done yet:
 - Strong production-grade LLM prompt orchestration and quality evaluation
 - Rich plot graph / conflict graph modeling
 - Strong fidelity evaluation
-- Database persistence
 - Authentication and multi-user support

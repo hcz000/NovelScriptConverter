@@ -3,14 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.router import create_router
-from app.core.config import API_PREFIX, APP_TITLE, APP_VERSION, EXPORTS_DIR, STORE_FILE, UPLOADS_DIR
+from app.core.config import API_PREFIX, APP_TITLE, APP_VERSION, DATABASE_FILE, EXPORTS_DIR, LEGACY_STORE_FILE, UPLOADS_DIR
 from app.core.store import DataStore
 
 
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-store = DataStore(STORE_FILE)
+store = DataStore(DATABASE_FILE, legacy_store_file=LEGACY_STORE_FILE)
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION)
 app.add_middleware(
