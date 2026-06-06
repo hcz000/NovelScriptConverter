@@ -49,6 +49,7 @@
         <p v-if="!store.isViewingCurrentVersion" class="muted-text">
           当前正在查看历史版本。请切回最新版本后再编辑或重写。
         </p>
+
         <div v-if="store.selectedScene" class="editor-form">
           <label class="field">
             <span>标题</span>
@@ -62,10 +63,49 @@
             <span>场景目标</span>
             <textarea v-model="form.purpose" rows="4" :disabled="!store.isViewingCurrentVersion" />
           </label>
-          <label class="field">
-            <span>节拍 JSON</span>
-            <textarea v-model="form.beatsText" rows="10" :disabled="!store.isViewingCurrentVersion" />
-          </label>
+
+          <section class="field">
+            <div class="beats-header">
+              <span>节拍列表</span>
+              <button
+                class="ghost-button"
+                :disabled="!store.isViewingCurrentVersion"
+                @click="addBeat"
+              >
+                新增节拍
+              </button>
+            </div>
+            <div class="beat-list">
+              <article v-for="(beat, index) in form.beats" :key="index" class="beat-card">
+                <div class="beat-toolbar">
+                  <strong>节拍 {{ index + 1 }}</strong>
+                  <button
+                    class="ghost-button danger-button"
+                    :disabled="!store.isViewingCurrentVersion"
+                    @click="removeBeat(index)"
+                  >
+                    删除
+                  </button>
+                </div>
+                <label class="field inline-field">
+                  <span>类型</span>
+                  <select v-model="beat.type" :disabled="!store.isViewingCurrentVersion">
+                    <option value="action">动作</option>
+                    <option value="dialogue">对白</option>
+                  </select>
+                </label>
+                <label v-if="beat.type === 'dialogue'" class="field inline-field">
+                  <span>角色</span>
+                  <input v-model="beat.character" :disabled="!store.isViewingCurrentVersion" />
+                </label>
+                <label class="field">
+                  <span>内容</span>
+                  <textarea v-model="beat.content" rows="3" :disabled="!store.isViewingCurrentVersion" />
+                </label>
+              </article>
+            </div>
+          </section>
+
           <label class="field">
             <span>重写指令</span>
             <textarea
@@ -79,6 +119,7 @@
             执行 AI 重写
           </button>
         </div>
+
         <div v-else class="empty-state">
           <p>选择一个场景开始编辑。</p>
         </div>
@@ -114,8 +155,16 @@ const form = reactive({
   title: "",
   slugline: "",
   purpose: "",
-  beatsText: "[]"
+  beats: []
 });
+
+function createEmptyBeat(type = "action") {
+  return {
+    type,
+    character: "",
+    content: ""
+  };
+}
 
 const formattedScript = computed(() => {
   if (!store.script) {
@@ -128,12 +177,21 @@ watch(
   () => store.selectedScene,
   (scene) => {
     if (!scene) {
+      form.title = "";
+      form.slugline = "";
+      form.purpose = "";
+      form.beats = [];
       return;
     }
+
     form.title = scene.title || "";
     form.slugline = scene.slugline || "";
     form.purpose = scene.purpose || "";
-    form.beatsText = JSON.stringify(scene.beats || [], null, 2);
+    form.beats = (scene.beats || []).map((beat) => ({
+      type: beat.type || "action",
+      character: beat.character || "",
+      content: beat.content || ""
+    }));
   },
   {
     immediate: true
@@ -144,13 +202,29 @@ async function selectScene(sceneId) {
   await store.loadScene(sceneId);
 }
 
+function addBeat() {
+  form.beats.push(createEmptyBeat());
+}
+
+function removeBeat(index) {
+  form.beats.splice(index, 1);
+}
+
+function normalizeBeats() {
+  return form.beats.map((beat) => ({
+    type: beat.type,
+    ...(beat.type === "dialogue" ? { character: beat.character.trim() } : {}),
+    content: beat.content.trim()
+  }));
+}
+
 async function saveScene() {
   try {
     await store.saveScene({
       title: form.title,
       slugline: form.slugline,
       purpose: form.purpose,
-      beats: JSON.parse(form.beatsText),
+      beats: normalizeBeats(),
       change_note: "前端工作台保存"
     });
   } catch (error) {

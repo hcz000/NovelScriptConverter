@@ -32,7 +32,8 @@ a {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -147,7 +148,8 @@ textarea {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   padding: 14px 16px;
   border: 1px solid var(--border);
@@ -267,6 +269,35 @@ textarea {
 .editor-form {
   display: grid;
   gap: 6px;
+}
+
+.beats-header,
+.beat-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.beat-list {
+  display: grid;
+  gap: 14px;
+}
+
+.beat-card {
+  padding: 16px;
+  border: 1px solid rgba(109, 90, 72, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.94);
+}
+
+.inline-field {
+  margin-bottom: 12px;
+}
+
+.danger-button {
+  background: #fde3d9;
+  color: #7c301d;
 }
 
 .code-block {
