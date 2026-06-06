@@ -19,6 +19,7 @@ Implemented today:
 - Chapter splitting for multi-chapter source text
 - Basic summary and character extraction
 - Scene-oriented script draft generation
+- Script quality report with scoring, pitch highlights, and revision priorities
 - Scene editing in the workspace
 - Instruction-based scene rewrite flow
 - Optional OpenAI-backed LLM generation and rewrite with rule-based fallback

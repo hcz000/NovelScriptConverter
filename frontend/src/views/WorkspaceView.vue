@@ -127,8 +127,50 @@
 
       <aside class="card panel preview-panel">
         <div class="panel-header">
-          <h3>YAML 预览</h3>
+          <h3>剧本体检</h3>
           <button class="ghost-button" @click="store.runExport()">导出</button>
+        </div>
+        <div v-if="qualityReport" class="quality-panel">
+          <div class="quality-score">
+            <strong>{{ qualityReport.overall_score }}</strong>
+            <span>综合评分</span>
+          </div>
+          <p class="quality-headline">{{ qualityReport.headline }}</p>
+
+          <section>
+            <h4>比赛展示亮点</h4>
+            <ul class="compact-list">
+              <li v-for="highlight in qualityReport.pitch_highlights" :key="highlight">
+                {{ highlight }}
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h4>分项评分</h4>
+            <div class="metric-list">
+              <div v-for="metric in qualityReport.metrics" :key="metric.name" class="metric-row">
+                <span>{{ metric.name }}</span>
+                <strong>{{ metric.score }}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="qualityReport.revision_priorities?.length">
+            <h4>下一轮优化</h4>
+            <ul class="compact-list">
+              <li v-for="priority in qualityReport.revision_priorities" :key="priority">
+                {{ priority }}
+              </li>
+            </ul>
+          </section>
+        </div>
+        <div v-else class="empty-state">
+          <p>生成剧本后显示质量体检。</p>
+        </div>
+
+        <div class="panel-header preview-header">
+          <h3>YAML 预览</h3>
         </div>
         <pre class="code-block">{{ formattedScript }}</pre>
         <div v-if="store.exportResult" class="export-box">
@@ -172,6 +214,8 @@ const formattedScript = computed(() => {
   }
   return toYaml(store.script);
 });
+
+const qualityReport = computed(() => store.script?.quality_report || null);
 
 watch(
   () => store.selectedScene,

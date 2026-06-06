@@ -9,6 +9,7 @@ from typing import Any
 from app.schemas import validate_script_payload
 from app.services.common import date_str
 from app.services.llm_provider import request_json_object
+from app.services.quality_report import attach_quality_report
 from app.services.text_analysis import (
     extract_characters,
     extract_keywords,
@@ -326,7 +327,7 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
     scene_plan = [build_scene_plan_entry(scene) for scene in scenes]
     chapter_to_scene_count = build_chapter_to_scene_count(scenes)
 
-    return {
+    script = {
         "project": {
             "title": f"{project['title']} - 剧本初稿",
             "source_type": "novel",
@@ -356,6 +357,7 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
         "character_relations": build_character_relations(chapters),
         "scene_plan": scene_plan,
     }
+    return attach_quality_report(script)
 
 
 def build_llm_generation_payload(project: dict[str, Any], chapters: list[dict[str, Any]], draft: dict[str, Any]) -> dict[str, Any]:

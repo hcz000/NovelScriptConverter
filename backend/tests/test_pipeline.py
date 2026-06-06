@@ -61,6 +61,9 @@ def test_build_script_creates_multiple_scenes_and_validates() -> None:
     assert validated["scene_plan"]
     assert validated["metadata"]["chapter_to_scene_count"]
     assert "conflict_keywords" in validated["source_summary"]
+    assert validated["quality_report"]["overall_score"] > 0
+    assert validated["quality_report"]["metrics"]
+    assert validated["quality_report"]["scene_notes"]
 
 
 def test_build_script_includes_character_relations() -> None:

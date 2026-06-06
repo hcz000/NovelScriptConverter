@@ -375,6 +375,73 @@ select {
   background: #fff3e4;
 }
 
+.preview-header {
+  margin-top: 22px;
+}
+
+.quality-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.quality-panel h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.quality-score {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border-radius: 16px;
+  background: #fff3e4;
+}
+
+.quality-score strong {
+  font-size: 42px;
+  line-height: 1;
+  color: var(--accent-dark);
+}
+
+.quality-score span,
+.quality-headline {
+  color: var(--muted);
+}
+
+.quality-headline {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.compact-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.metric-list {
+  display: grid;
+  gap: 8px;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(109, 90, 72, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 253, 248, 0.94);
+}
+
+.metric-row span {
+  color: var(--muted);
+}
+
 .compare-card {
   grid-column: 1 / -1;
 }

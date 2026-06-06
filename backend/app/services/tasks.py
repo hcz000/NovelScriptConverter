@@ -27,6 +27,7 @@ from app.services.common import (
 )
 from app.services.scene_rewriter import apply_rewrite_instruction, llm_rewrite_scene
 from app.services.script_builder import build_chapters, build_script, llm_generate_script
+from app.services.quality_report import attach_quality_report
 from app.services.script_ops import (
     clone_script,
     dump_script_content,
@@ -97,7 +98,7 @@ def generate_project_script(
         return
 
     rule_script = validate_script_or_raise(build_script(project, chapters))
-    script = llm_generate_script(project, chapters, rule_script) or rule_script
+    script = attach_quality_report(llm_generate_script(project, chapters, rule_script) or rule_script)
     version_id = make_id("ver")
     version_name = next_version_name(project.get("versions", []))
     version_record = {
@@ -176,6 +177,7 @@ def patch_scene(
             if scene_id not in modified_scenes:
                 modified_scenes.append(scene_id)
             current_version["created_at"] = now_iso()
+        attach_quality_report(script)
         script = validate_script_or_raise(script)
         current["scripts"][version_id] = script
         current["updated_at"] = now_iso()
@@ -236,6 +238,7 @@ def rewrite_scene_task(
     else:
         apply_rewrite_instruction(scene, instruction)
 
+    attach_quality_report(working_script)
     working_script = validate_script_or_raise(working_script)
 
     def updater(current: dict[str, Any]) -> dict[str, Any]:
@@ -292,7 +295,7 @@ def export_script_task(
             error_message="version not found",
         )
         return
-    script = validate_script_or_raise(project["scripts"][active_version_id])
+    script = validate_script_or_raise(attach_quality_report(project["scripts"][active_version_id]))
     content = dump_script_content(script, export_format)
     suffix = "json" if export_format.lower() == "json" else "yaml"
     file_name = f"{project_id}_{active_version_id}.{suffix}"

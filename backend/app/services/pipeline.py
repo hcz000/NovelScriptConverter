@@ -39,6 +39,7 @@ from app.services.scene_rewriter import (
     rewrite_action_content,
     rewrite_dialogue_content,
 )
+from app.services.quality_report import attach_quality_report, build_quality_report
 from app.services.script_builder import (
     build_beats_from_paragraphs,
     build_chapter_to_scene_count,

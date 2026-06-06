@@ -127,6 +127,30 @@ class ScriptMetadataSchema(BaseModel):
     conflict_keywords: list[str] = Field(default_factory=list, max_length=8)
 
 
+class QualityMetricSchema(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    score: int = Field(..., ge=0, le=100)
+    rationale: str = Field(..., min_length=1, max_length=200)
+
+
+class SceneQualityNoteSchema(BaseModel):
+    scene_id: str = Field(..., pattern=r"^SC\d{3}$")
+    score: int = Field(..., ge=0, le=100)
+    strengths: list[str] = Field(default_factory=list, max_length=4)
+    risks: list[str] = Field(default_factory=list, max_length=4)
+    suggestions: list[str] = Field(default_factory=list, max_length=4)
+
+
+class QualityReportSchema(BaseModel):
+    overall_score: int = Field(..., ge=0, le=100)
+    headline: str = Field(..., min_length=1, max_length=120)
+    pitch_highlights: list[str] = Field(..., min_length=1, max_length=6)
+    metrics: list[QualityMetricSchema] = Field(..., min_length=1, max_length=8)
+    scene_notes: list[SceneQualityNoteSchema] = Field(default_factory=list)
+    revision_priorities: list[str] = Field(default_factory=list, max_length=6)
+    generated_by: Literal["rule", "llm"] = "rule"
+
+
 class ScriptSchema(BaseModel):
     project: ProjectMetaSchema
     source_summary: SourceSummarySchema
@@ -136,6 +160,7 @@ class ScriptSchema(BaseModel):
     versions: list[ScriptVersionEntrySchema]
     character_relations: list[CharacterRelationSchema] = Field(default_factory=list)
     scene_plan: list[ScenePlanEntrySchema] = Field(default_factory=list)
+    quality_report: QualityReportSchema
 
     @model_validator(mode="after")
     def validate_scene_counts(self) -> "ScriptSchema":
