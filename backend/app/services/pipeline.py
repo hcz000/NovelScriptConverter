@@ -717,6 +717,58 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
     }
 
 
+def build_llm_generation_payload(project: dict[str, Any], chapters: list[dict[str, Any]], draft: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "project": {
+            "title": project["title"],
+            "language": project["language"],
+        },
+        "chapters": [
+            {
+                "chapter_id": chapter["chapter_id"],
+                "title": chapter["title"],
+                "summary": chapter["summary"],
+                "characters": chapter["characters"],
+                "scene_candidates": chapter["scene_candidates"],
+                "excerpt": chapter["chapter_text"][:800],
+            }
+            for chapter in chapters
+        ],
+        "draft_schema_reference": draft,
+    }
+
+
+def llm_generate_script(project: dict[str, Any], chapters: list[dict[str, Any]], draft: dict[str, Any]) -> dict[str, Any] | None:
+    payload = build_llm_generation_payload(project, chapters, draft)
+    system_prompt = (
+        "你是小说改编编剧助手。请根据输入章节生成完整剧本初稿 JSON。"
+        "必须保留并强化人物表、主冲突、章节到场景映射、场景节拍和版本元数据。"
+        "输出必须是单个 JSON 对象，并严格符合参考草稿的字段结构。"
+    )
+    user_prompt = (
+        "请把小说章节改编成可编辑的剧本初稿。\n"
+        "硬性要求：\n"
+        "1. project.source_chapter_count 必须等于输入章节数。\n"
+        "2. metadata.total_scenes 必须等于 scenes 数量。\n"
+        "3. 每个 scene_id 使用 SC001 递增格式，每个 chapter_id 使用输入中的 CH 编号。\n"
+        "4. dialogue beat 的 character 必须存在于该场景 characters。\n"
+        "5. 保留 source_summary, character_relations, scene_plan, metadata.chapter_to_scene_count。\n"
+        f"输入 JSON：{json.dumps(payload, ensure_ascii=False)}"
+    )
+
+    try:
+        result = request_json_object(system_prompt, user_prompt)
+    except Exception:
+        return None
+    if not result:
+        return None
+
+    try:
+        return validate_script_payload(result)
+    except Exception:
+        return None
+
+
 def build_rewrite_profile(instruction: str) -> dict[str, bool]:
     normalized = instruction.strip()
     return {
@@ -930,7 +982,8 @@ def generate_project_script(
         )
         return
 
-    script = validate_script_or_raise(build_script(project, chapters))
+    rule_script = validate_script_or_raise(build_script(project, chapters))
+    script = llm_generate_script(project, chapters, rule_script) or rule_script
     version_id = make_id("ver")
     version_name = next_version_name(project.get("versions", []))
     version_record = {

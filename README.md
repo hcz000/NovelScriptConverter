@@ -20,6 +20,7 @@ Implemented today:
 - Scene-oriented script draft generation
 - Scene editing in the workspace
 - Instruction-based scene rewrite flow
+- Optional OpenAI-backed LLM generation and rewrite with rule-based fallback
 - Version tracking
 - YAML / JSON export
 - Backend schema validation for script structure
@@ -27,7 +28,7 @@ Implemented today:
 
 Important constraints:
 
-- Script generation and rewrite are still rule-based prototype logic
+- LLM generation and rewrite require `LLM_PROVIDER=openai` and `OPENAI_API_KEY`; otherwise the backend falls back to deterministic prototype rules
 - Data is stored in local JSON, not a database
 - Tasks run through FastAPI `BackgroundTasks`
 - The frontend polls task state instead of using streaming or websockets
@@ -64,6 +65,12 @@ cd backend
 pytest -q
 ```
 
+If the system temp directory is not writable, run:
+
+```bash
+pytest -q --basetemp .test-tmp -p no:cacheprovider
+```
+
 ## Repository notes
 
 - Runtime project data is written under `backend/data/`
@@ -74,7 +81,7 @@ pytest -q
 
 The following are not done yet:
 
-- Real LLM-based novel understanding and rewrite quality
+- Strong production-grade LLM prompt orchestration and quality evaluation
 - Rich plot graph / conflict graph modeling
 - Strong fidelity evaluation
 - Database persistence

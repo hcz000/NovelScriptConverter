@@ -5,6 +5,7 @@ from app.services.pipeline import (
     build_chapters,
     build_script,
     extract_characters,
+    generate_project_script,
     matches_heading,
     split_chapters,
 )
@@ -106,3 +107,109 @@ def test_apply_rewrite_instruction_updates_scene_notes() -> None:
 
 def test_llm_provider_disabled_by_default() -> None:
     assert llm_enabled() is False
+
+
+def test_generate_project_script_uses_valid_llm_draft(temp_store, monkeypatch) -> None:
+    raw = [
+        {
+            "title": "第一章 入门",
+            "text": "林凡走进考场，苏青在旁观察。测试官冷冷看着他，气氛越来越紧。",
+        }
+    ]
+    chapters = build_chapters(raw)
+    project = {
+        "project_id": "proj_llm",
+        "title": "测试项目",
+        "source_type": "novel",
+        "language": "zh-CN",
+        "status": "READY",
+        "source_chapter_count": len(chapters),
+        "current_version_id": None,
+        "created_at": "2026-06-06T00:00:00+08:00",
+        "updated_at": "2026-06-06T00:00:00+08:00",
+        "source_file_name": None,
+        "source_file_path": None,
+        "chapters": chapters,
+        "versions": [],
+        "scripts": {},
+    }
+    task = {
+        "task_id": "task_llm",
+        "task_type": "GENERATE_SCRIPT",
+        "status": "PENDING",
+        "progress": 0,
+        "project_id": project["project_id"],
+        "result": None,
+        "error_message": None,
+        "created_at": "2026-06-06T00:00:00+08:00",
+        "updated_at": "2026-06-06T00:00:00+08:00",
+    }
+    temp_store.upsert_project(project)
+    temp_store.upsert_task(task)
+
+    def fake_llm_generate(project_payload, chapter_payload, draft):
+        generated = build_script(project_payload, chapter_payload)
+        generated["source_summary"]["premise"] = "LLM 生成的核心前提"
+        generated["metadata"]["conflict_keywords"] = ["LLM冲突"]
+        return generated
+
+    monkeypatch.setattr("app.services.pipeline.llm_generate_script", fake_llm_generate)
+
+    generate_project_script(temp_store, project["project_id"], task["task_id"], include_report=True)
+
+    updated_task = temp_store.get_task(task["task_id"])
+    updated_project = temp_store.get_project(project["project_id"])
+    assert updated_task["status"] == "SUCCEEDED"
+    version_id = updated_task["result"]["current_version_id"]
+    assert updated_project["scripts"][version_id]["source_summary"]["premise"] == "LLM 生成的核心前提"
+    assert updated_project["scripts"][version_id]["metadata"]["conflict_keywords"] == ["LLM冲突"]
+
+
+def test_generate_project_script_falls_back_when_llm_draft_is_missing(temp_store, monkeypatch) -> None:
+    raw = [
+        {
+            "title": "第一章 入门",
+            "text": "林凡走进考场，苏青在旁观察。测试官冷冷看着他，气氛越来越紧。",
+        }
+    ]
+    chapters = build_chapters(raw)
+    project = {
+        "project_id": "proj_rule",
+        "title": "测试项目",
+        "source_type": "novel",
+        "language": "zh-CN",
+        "status": "READY",
+        "source_chapter_count": len(chapters),
+        "current_version_id": None,
+        "created_at": "2026-06-06T00:00:00+08:00",
+        "updated_at": "2026-06-06T00:00:00+08:00",
+        "source_file_name": None,
+        "source_file_path": None,
+        "chapters": chapters,
+        "versions": [],
+        "scripts": {},
+    }
+    task = {
+        "task_id": "task_rule",
+        "task_type": "GENERATE_SCRIPT",
+        "status": "PENDING",
+        "progress": 0,
+        "project_id": project["project_id"],
+        "result": None,
+        "error_message": None,
+        "created_at": "2026-06-06T00:00:00+08:00",
+        "updated_at": "2026-06-06T00:00:00+08:00",
+    }
+    temp_store.upsert_project(project)
+    temp_store.upsert_task(task)
+    monkeypatch.setattr("app.services.pipeline.llm_generate_script", lambda *_args: None)
+
+    generate_project_script(temp_store, project["project_id"], task["task_id"], include_report=True)
+
+    updated_task = temp_store.get_task(task["task_id"])
+    updated_project = temp_store.get_project(project["project_id"])
+    version_id = updated_task["result"]["current_version_id"]
+    script = updated_project["scripts"][version_id]
+    assert updated_task["status"] == "SUCCEEDED"
+    assert script["source_summary"]["premise"] != "LLM 生成的核心前提"
+    assert script["metadata"]["total_scenes"] == len(script["scenes"])
