@@ -89,6 +89,35 @@ def test_build_script_includes_character_relations() -> None:
     assert validated["character_relations"]
 
 
+def test_build_script_adds_stronger_scene_dramatics() -> None:
+    raw = [
+        {
+            "title": "第一章 考场对峙",
+            "text": (
+                "林凡走进考场，苏青在旁观察。\n\n"
+                "测试官宣布失败就会失去资格。\n\n"
+                "林凡看着苏青，苏青没有退让。\n\n"
+                "忽然，场内的石碑亮了。"
+            ),
+        }
+    ]
+    chapters = build_chapters(raw)
+    script = build_script({"title": "测试项目", "language": "zh-CN"}, chapters)
+    validated = validate_script_payload(script)
+    first_scene = validated["scenes"][0]
+
+    assert first_scene["slugline"].startswith("INT. 考场")
+    assert "资格" in first_scene["dramatic_structure"]["stakes"]
+    assert "钩子" in first_scene["adaptation_notes"]["style"]
+    assert any(
+        beat["type"] == "dialogue"
+        for scene in validated["scenes"]
+        for beat in scene["beats"]
+    )
+    assert any("关系" in relation["relationship"] for relation in validated["character_relations"])
+    assert "可拍冲突" in validated["source_summary"]["main_conflict"]
+
+
 def test_attach_quality_report_uses_valid_llm_review(monkeypatch) -> None:
     raw = [
         {

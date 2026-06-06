@@ -160,7 +160,8 @@ def extract_characters(text: str) -> list[str]:
     counter = Counter()
     patterns = [
         re.compile(rf"([\u4e00-\u9fff]{{2,4}})(?={'|'.join(CHARACTER_HINT_WORDS)})"),
-        re.compile(rf"(?:对|朝|看向|望向)([\u4e00-\u9fff]{{2,4}})"),
+        re.compile(r"(?:对|朝|看着|看向|望向|盯着|喊了|叫住|遇见|遇到|拦住)([\u4e00-\u9fff]{2,4})"),
+        re.compile(r"([\u4e00-\u9fff]{2,4})(?=在旁|没有|仍旧|却|站在|出现|退让|沉默)"),
     ]
 
     for pattern in patterns:

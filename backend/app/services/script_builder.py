@@ -113,6 +113,39 @@ def infer_time_of_day(text: str) -> str:
     return "白天"
 
 
+def infer_scene_location(text: str, title: str) -> str:
+    combined = f"{title} {text}"
+    location_rules = (
+        ("考场", ("考场", "考试", "测试官", "石碑", "资格")),
+        ("走廊", ("走廊", "楼道", "门外", "楼梯")),
+        ("客厅", ("客厅", "沙发", "茶几", "家里")),
+        ("办公室", ("办公室", "会议室", "桌前", "文件")),
+        ("街口", ("街", "巷", "路口", "人群", "车")),
+        ("院落", ("院", "庭院", "门廊", "雨檐")),
+        ("山林", ("山", "林", "树林", "山路")),
+        ("病房", ("医院", "病房", "护士", "医生")),
+        ("牢房", ("牢", "狱", "铁门", "囚")),
+        ("战场", ("战场", "营地", "刀", "枪", "冲杀")),
+    )
+    for location, keywords in location_rules:
+        if any(keyword in combined for keyword in keywords):
+            return location
+    return "关键场所"
+
+
+def infer_scene_prefix(location: str, text: str) -> str:
+    indoor_locations = ("考场", "走廊", "客厅", "办公室", "病房", "牢房")
+    if location in indoor_locations:
+        return "INT"
+    outdoor_terms = ("街", "巷", "路口", "院", "山", "林", "战场", "营地", "码头", "桥")
+    return "EXT" if any(term in location or term in text for term in outdoor_terms) else "INT"
+
+
+def build_scene_slugline(chapter_title: str, scene_text: str) -> str:
+    location = infer_scene_location(scene_text, chapter_title)
+    return f"{infer_scene_prefix(location, scene_text)}. {location} - {infer_time_of_day(scene_text)}"
+
+
 def infer_scene_pacing(paragraphs: list[str]) -> str:
     joined = "".join(paragraphs)
     action_hits = len(re.findall(r"冲|追|逃|打|杀|撞|喊|奔|闯|爆|推|拦|逼", joined))
@@ -130,6 +163,21 @@ def infer_scene_style(paragraphs: list[str]) -> str:
     if re.search(r"想|心|沉默|回忆|犹豫|目光", joined):
         return "情绪沉浸"
     return "叙事铺垫"
+
+
+def infer_scene_function(paragraphs: list[str], scene_index: int, group_index: int, total_groups: int) -> str:
+    joined = "".join(paragraphs)
+    if scene_index == 1:
+        return "开场钩子"
+    if re.search(r"忽然|突然|亮|出现|发现|打断|反转|揭开", joined):
+        return "反转钩子"
+    if re.search(r"争|怒|逼|威胁|质问|反击|不退", joined):
+        return "冲突升级"
+    if re.search(r"沉默|观察|试探|看着|没有退让", joined):
+        return "关系试探"
+    if group_index == total_groups:
+        return "章节收束"
+    return "信息推进"
 
 
 def summarize_paragraph_group(paragraphs: list[str], fallback: str) -> str:
@@ -176,7 +224,56 @@ def build_beats_from_paragraphs(paragraphs: list[str], characters: list[str]) ->
                 "content": summarize_text(" ".join(paragraphs), limit=90),
             }
         )
-    return beats
+
+    has_dialogue = any(beat["type"] == "dialogue" for beat in beats)
+    if not has_dialogue and len(characters) >= 2 and len(beats) < 12:
+        beats.insert(
+            min(1, len(beats)),
+            {
+                "type": "dialogue",
+                "character": fallback_character,
+                "content": build_adapted_dialogue(paragraphs, fallback_character),
+            },
+        )
+    return beats[:12]
+
+
+def build_adapted_dialogue(paragraphs: list[str], character: str) -> str:
+    joined = "".join(paragraphs)
+    if re.search(r"资格|淘汰|失败|考试|测试", joined):
+        return "我不会在这里认输。"
+    if re.search(r"沉默|观察|看着|试探", joined):
+        return "你一直看着我，是想等我先露怯？"
+    if re.search(r"威胁|逼|拦|退让", joined):
+        return "这一步我必须走下去。"
+    return f"{character}不能再被局势推着走。"
+
+
+def infer_failure_cost(scene_text: str, primary_character: str) -> str:
+    if re.search(r"资格|考试|测试|淘汰", scene_text):
+        return f"如果这一场失败，{primary_character}会失去资格，并被迫退出当前机会。"
+    if re.search(r"身份|暴露|秘密", scene_text):
+        return f"如果这一场失败，{primary_character}的身份或秘密会被提前暴露。"
+    if re.search(r"信任|误会|背叛|退让", scene_text):
+        return f"如果这一场失败，{primary_character}会失去关键人物的信任。"
+    if re.search(r"死|杀|危险|追|逃", scene_text):
+        return f"如果这一场失败，{primary_character}将面对直接的人身危险。"
+    return f"如果这一场失败，{primary_character}后续将失去主动权。"
+
+
+def infer_obstacle(scene_text: str, primary_character: str, characters: list[str], conflict_label: str) -> str:
+    secondary_character = next((character for character in characters if character != primary_character), "")
+    if secondary_character and re.search(r"冷|逼|质问|拦|观察|退让|沉默|看着", scene_text):
+        return f"{secondary_character}的审视或施压不断升级，叠加{conflict_label}造成阻碍。"
+    return f"场景中持续存在{conflict_label}带来的阻碍与误判。"
+
+
+def infer_turning_point(paragraphs: list[str], chapter_title: str) -> str:
+    tail = paragraphs[-1] if paragraphs else chapter_title
+    tail_summary = summarize_text(tail, limit=70)
+    if re.search(r"忽然|突然|亮|出现|发现|打断|冲进|反转", tail):
+        return f"尾部“{tail_summary}”打断原有判断，形成下一场钩子。"
+    return f"场景后段围绕“{tail_summary or chapter_title}”出现新的态度或信息变化。"
 
 
 def build_scene_dramatic_structure(
@@ -184,15 +281,17 @@ def build_scene_dramatic_structure(
     paragraphs: list[str],
     scene_summary: str,
     characters: list[str],
+    scene_function: str,
 ) -> dict[str, Any]:
     primary_character = characters[0] if characters else "主角"
-    conflict_keywords = extract_keywords("".join(paragraphs), limit=3)
+    scene_text = "".join(paragraphs)
+    conflict_keywords = extract_keywords(scene_text, limit=3)
     conflict_label = "、".join(conflict_keywords[:2]) if conflict_keywords else "外部压力"
     return {
-        "objective": f"{primary_character}希望推进当前局势，确保“{scene_summary[:18] or chapter['title']}”落地。",
-        "obstacle": f"场景中持续存在{conflict_label}带来的阻碍与误判。",
-        "stakes": f"如果这一场失败，{primary_character}后续将失去主动权。",
-        "turning_point": f"场景后段围绕“{scene_summary[:18] or chapter['title']}”出现新的信息或态度反转。",
+        "objective": f"{primary_character}要在“{scene_summary[:24] or chapter['title']}”中夺回主动权，完成本场的{scene_function}。",
+        "obstacle": infer_obstacle(scene_text, primary_character, characters, conflict_label),
+        "stakes": infer_failure_cost(scene_text, primary_character),
+        "turning_point": infer_turning_point(paragraphs, chapter["title"]),
         "emotion_curve": ["铺垫", "拉紧", "转折", "推进"],
     }
 
@@ -226,15 +325,18 @@ def build_character_profiles(chapters: list[dict[str, Any]]) -> list[dict[str, A
 
 def build_character_relations(chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
     pair_counter = Counter()
+    pair_context: dict[tuple[str, str], list[str]] = {}
     for chapter in chapters:
         characters = chapter["characters"][:4]
         for index, left in enumerate(characters):
             for right in characters[index + 1 :]:
-                pair_counter[tuple(sorted((left, right)))] += 1
+                pair = tuple(sorted((left, right)))
+                pair_counter[pair] += 1
+                pair_context.setdefault(pair, []).append(chapter["chapter_text"][:400])
 
     relations: list[dict[str, Any]] = []
     for (left, right), count in pair_counter.most_common(5):
-        relationship = "高频同场角色关系" if count >= 2 else "同章关联角色"
+        relationship = infer_relationship_label(pair_context.get((left, right), []), count)
         relations.append(
             {
                 "pair": f"{left} / {right}",
@@ -242,6 +344,17 @@ def build_character_relations(chapters: list[dict[str, Any]]) -> list[dict[str, 
             }
         )
     return relations
+
+
+def infer_relationship_label(contexts: list[str], count: int) -> str:
+    joined = "".join(contexts)
+    if re.search(r"对峙|没有退让|质问|威胁|反击|气氛更紧", joined):
+        return "持续对峙关系，适合转化为场景冲突线"
+    if re.search(r"观察|看着|试探|沉默", joined):
+        return "互相观察和试探的关系张力"
+    if count >= 2:
+        return "高频同场关系，可承接人物弧光"
+    return "同章关联角色，可作为场景变量"
 
 
 def build_scene_from_group(
@@ -254,14 +367,15 @@ def build_scene_from_group(
     scene_summary = summarize_paragraph_group(paragraphs, chapter["summary"])
     characters = find_scene_characters(paragraphs, chapter["characters"])
     scene_text = "".join(paragraphs)
+    scene_function = infer_scene_function(paragraphs, scene_index, group_index, total_groups)
     scene_title = chapter["title"][:48]
     if total_groups > 1:
-        scene_title = f"{scene_title} - 场景{group_index}"
+        scene_title = f"{scene_title} - {scene_function}"
 
     return {
         "scene_id": f"SC{scene_index:03d}",
         "title": scene_title,
-        "slugline": f"INT. 改编场景 {scene_index} - {infer_time_of_day(scene_text)}",
+        "slugline": build_scene_slugline(chapter["title"], scene_text),
         "purpose": scene_summary,
         "source_refs": [
             {
@@ -270,11 +384,17 @@ def build_scene_from_group(
             }
         ],
         "characters": characters,
-        "dramatic_structure": build_scene_dramatic_structure(chapter, paragraphs, scene_summary, characters),
+        "dramatic_structure": build_scene_dramatic_structure(
+            chapter,
+            paragraphs,
+            scene_summary,
+            characters,
+            scene_function,
+        ),
         "beats": build_beats_from_paragraphs(paragraphs, characters),
         "adaptation_notes": {
             "pacing": infer_scene_pacing(paragraphs),
-            "style": infer_scene_style(paragraphs),
+            "style": f"{infer_scene_style(paragraphs)} / {scene_function}",
             "coverage": f"{chapter['chapter_id']} 第 {group_index}/{total_groups} 段场景",
         },
     }
@@ -285,7 +405,7 @@ def build_scene_plan_entry(scene: dict[str, Any]) -> dict[str, Any]:
     return {
         "scene_id": scene["scene_id"],
         "chapter_id": source_ref["chapter_id"],
-        "focus": scene["purpose"][:120],
+        "focus": f"{scene['adaptation_notes']['style']}：{scene['purpose']}"[:120],
         "characters": scene["characters"],
     }
 
@@ -318,11 +438,8 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
 
     premise = summarize_text(" ".join(chapter["summary"] for chapter in chapters[:3]), limit=140)
     conflict_seed = extract_keywords(" ".join(chapter["summary"] for chapter in chapters), limit=4)
-    main_conflict = (
-        f"故事围绕{'、'.join(conflict_seed[:2])}展开，角色必须在连续冲突中争取主动。"
-        if conflict_seed
-        else "故事围绕角色目标与外部阻力之间的持续冲突展开。"
-    )
+    character_profiles = build_character_profiles(chapters)
+    main_conflict = build_main_conflict(chapters, character_profiles, conflict_seed)
     chapter_highlights = [chapter["summary"][:60] for chapter in chapters[:5]]
     scene_plan = [build_scene_plan_entry(scene) for scene in scenes]
     chapter_to_scene_count = build_chapter_to_scene_count(scenes)
@@ -339,7 +456,7 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
         "source_summary": {
             "premise": premise,
             "main_conflict": main_conflict,
-            "main_characters": build_character_profiles(chapters),
+            "main_characters": character_profiles,
             "conflict_keywords": conflict_seed,
             "chapter_highlights": chapter_highlights,
         },
@@ -358,6 +475,20 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
         "scene_plan": scene_plan,
     }
     return attach_quality_report(script, use_llm=False)
+
+
+def build_main_conflict(
+    chapters: list[dict[str, Any]],
+    character_profiles: list[dict[str, Any]],
+    conflict_seed: list[str],
+) -> str:
+    protagonist = character_profiles[0]["name"] if character_profiles else "主角"
+    opposing_force = "、".join(conflict_seed[:2]) if conflict_seed else "外部压力"
+    chapter_count = len(chapters)
+    return (
+        f"{protagonist}在{chapter_count}个章节事件中不断遭遇{opposing_force}，"
+        "必须通过一次次场景选择夺回主动权；人物关系会持续把外部事件转化为可拍冲突。"
+    )
 
 
 def build_llm_generation_payload(project: dict[str, Any], chapters: list[dict[str, Any]], draft: dict[str, Any]) -> dict[str, Any]:
