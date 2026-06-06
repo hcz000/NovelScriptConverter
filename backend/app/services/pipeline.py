@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException, status
 
-from app.core.config import EXPORTS_DIR, UPLOADS_DIR
+from app.core.config import API_PREFIX, EXPORTS_DIR, UPLOADS_DIR
 from app.core.store import DataStore
 
 try:
@@ -682,7 +682,7 @@ def export_script_task(
     export_path.write_text(content, encoding="utf-8")
 
     result = {
-        "download_url": f"/downloads/{file_name}",
+        "download_url": f"{API_PREFIX}/downloads/{file_name}",
         "file_name": file_name,
     }
     if include_report:
@@ -692,4 +692,3 @@ def export_script_task(
         }
 
     update_task(store, task_id, status=TASK_SUCCEEDED, progress=100, result=result)
-
