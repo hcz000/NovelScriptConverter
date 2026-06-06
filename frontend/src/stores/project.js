@@ -53,6 +53,10 @@ function buildSceneList(script) {
   }));
 }
 
+function getErrorMessage(error, fallback) {
+  return error?.message || fallback;
+}
+
 async function waitTask(taskId, attempts = 120, interval = 1000) {
   for (let index = 0; index < attempts; index += 1) {
     const taskResponse = await getTask(taskId);
@@ -177,6 +181,9 @@ export const useProjectStore = defineStore("project", {
 
         await this.refreshAll();
         this.message = "项目初始化完成";
+      } catch (error) {
+        this.message = `项目初始化失败：${getErrorMessage(error, "请检查输入文件")}`;
+        throw error;
       } finally {
         this.loading = false;
       }
@@ -261,6 +268,10 @@ export const useProjectStore = defineStore("project", {
       try {
         await updateScene(this.projectId, this.selectedSceneId, payload);
         await this.refreshAll();
+        this.message = "场景已保存";
+      } catch (error) {
+        this.message = `保存失败：${getErrorMessage(error, "请检查场景内容")}`;
+        throw error;
       } finally {
         this.loading = false;
       }
@@ -280,6 +291,10 @@ export const useProjectStore = defineStore("project", {
         const task = await waitTask(response.data.task_id);
         this.selectedVersionId = task.result?.current_version_id || "";
         await this.refreshAll();
+        this.message = "场景重写完成";
+      } catch (error) {
+        this.message = `重写失败：${getErrorMessage(error, "请调整重写指令")}`;
+        throw error;
       } finally {
         this.loading = false;
       }
@@ -298,6 +313,10 @@ export const useProjectStore = defineStore("project", {
         });
         const task = await waitTask(response.data.task_id);
         this.exportResult = task.result;
+        this.message = "导出完成";
+      } catch (error) {
+        this.message = `导出失败：${getErrorMessage(error, "请稍后重试")}`;
+        throw error;
       } finally {
         this.loading = false;
       }

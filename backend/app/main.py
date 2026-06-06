@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -23,6 +23,17 @@ app.add_middleware(
 app.include_router(create_router(store), prefix=API_PREFIX)
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
+    detail = exc.detail if isinstance(exc.detail, dict) else {
+        "code": exc.status_code,
+        "message": str(exc.detail),
+        "request_id": "req_http_exception",
+        "data": None,
+    }
+    return JSONResponse(status_code=exc.status_code, content=detail)
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
     if isinstance(exc, KeyError):
@@ -36,4 +47,3 @@ async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONRespons
             },
         )
     raise exc
-

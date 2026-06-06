@@ -130,3 +130,15 @@ def test_manual_scene_update_tracks_modified_scenes(app_client) -> None:
     versions_response = app_client.get(f"/api/v1/projects/{project_id}/versions")
     current_version = versions_response.json()["data"]["items"][-1]
     assert scene_id in current_version["modified_scenes"]
+
+
+def test_invalid_upload_returns_structured_error(app_client) -> None:
+    project_id = create_project(app_client)
+    response = app_client.post(
+        f"/api/v1/projects/{project_id}/source",
+        files={"file": ("novel.pdf", b"dummy", "application/pdf")},
+    )
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["code"] == 40002
+    assert payload["message"] == "unsupported file type"

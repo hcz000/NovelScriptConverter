@@ -12,6 +12,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.api.router import create_router
 from app.core.store import DataStore
+from app.main import http_exception_handler, unhandled_exception_handler
 
 
 @pytest.fixture()
@@ -37,6 +38,10 @@ def app_client(temp_store: DataStore, tmp_path: Path, monkeypatch: pytest.Monkey
 
     app = FastAPI()
     app.include_router(create_router(temp_store), prefix="/api/v1")
+    from fastapi import HTTPException
+
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(Exception, unhandled_exception_handler)
 
     with TestClient(app) as client:
         yield client
