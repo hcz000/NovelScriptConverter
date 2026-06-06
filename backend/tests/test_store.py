@@ -65,6 +65,27 @@ def test_sqlite_store_mutates_records(tmp_path: Path) -> None:
     assert store.get_task(task["task_id"])["progress"] == 100
 
 
+def test_sqlite_store_lists_and_deletes_projects(tmp_path: Path) -> None:
+    store = DataStore(tmp_path / "studio.sqlite3")
+    active_project = make_project("proj_active")
+    archived_project = {**make_project("proj_archived"), "archived": True}
+    task = make_task(active_project["project_id"], "task_active")
+
+    store.upsert_project(active_project)
+    store.upsert_project(archived_project)
+    store.upsert_task(task)
+
+    active_projects = store.list_projects()
+    all_projects = store.list_projects(include_archived=True)
+    assert [project["project_id"] for project in active_projects] == ["proj_active"]
+    assert {project["project_id"] for project in all_projects} == {"proj_active", "proj_archived"}
+
+    assert store.delete_project(active_project["project_id"]) is True
+    assert store.get_project(active_project["project_id"]) is None
+    assert store.get_task(task["task_id"]) is None
+    assert store.delete_project("missing") is False
+
+
 def test_sqlite_store_imports_legacy_json_once(tmp_path: Path) -> None:
     legacy_file = tmp_path / "store.json"
     project = make_project("proj_legacy")

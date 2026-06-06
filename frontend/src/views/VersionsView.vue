@@ -51,17 +51,107 @@
           </li>
         </ul>
       </article>
+      <article class="card compare-card">
+        <h3>版本对比</h3>
+        <div class="compare-controls">
+          <label class="field">
+            <span>基准版本</span>
+            <select v-model="baseVersionId">
+              <option value="">选择版本</option>
+              <option v-for="version in store.versions" :key="`base-${version.version_id}`" :value="version.version_id">
+                {{ version.version_name }}
+              </option>
+            </select>
+          </label>
+          <label class="field">
+            <span>目标版本</span>
+            <select v-model="targetVersionId">
+              <option value="">选择版本</option>
+              <option
+                v-for="version in store.versions"
+                :key="`target-${version.version_id}`"
+                :value="version.version_id"
+              >
+                {{ version.version_name }}
+              </option>
+            </select>
+          </label>
+          <button class="primary-button" :disabled="!canCompare || store.loading" @click="compareVersions">
+            对比
+          </button>
+        </div>
+
+        <div v-if="store.versionCompare" class="compare-result">
+          <div class="summary-grid">
+            <span>新增 {{ store.versionCompare.summary.added }}</span>
+            <span>删除 {{ store.versionCompare.summary.removed }}</span>
+            <span>修改 {{ store.versionCompare.summary.changed }}</span>
+            <span>未变 {{ store.versionCompare.summary.unchanged }}</span>
+          </div>
+          <ul class="version-list">
+            <li v-for="scene in changedScenes" :key="scene.scene_id" class="diff-row">
+              <strong>{{ scene.scene_id }} {{ scene.title }}</strong>
+              <span>{{ statusLabel(scene.status) }}</span>
+              <p v-if="scene.changed_fields.length">字段：{{ scene.changed_fields.join("、") }}</p>
+            </li>
+          </ul>
+          <p v-if="!changedScenes.length" class="muted-text">两个版本的场景内容没有差异。</p>
+        </div>
+      </article>
     </div>
   </section>
 </template>
 
 <script setup>
+import { computed, ref, watch } from "vue";
+
 import StatusBanner from "../components/StatusBanner.vue";
 import { useProjectStore } from "../stores/project";
 
 const store = useProjectStore();
+const baseVersionId = ref("");
+const targetVersionId = ref("");
+
+const canCompare = computed(
+  () => baseVersionId.value && targetVersionId.value && baseVersionId.value !== targetVersionId.value
+);
+
+const changedScenes = computed(() =>
+  (store.versionCompare?.scenes || []).filter((scene) => scene.status !== "unchanged")
+);
+
+watch(
+  () => store.versions,
+  (versions) => {
+    if (!versions.length) {
+      baseVersionId.value = "";
+      targetVersionId.value = "";
+      return;
+    }
+    if (!baseVersionId.value && versions.length >= 1) {
+      baseVersionId.value = versions[0].version_id;
+    }
+    if (!targetVersionId.value && versions.length >= 2) {
+      targetVersionId.value = versions[versions.length - 1].version_id;
+    }
+  },
+  { immediate: true }
+);
 
 async function selectVersion(versionId) {
   await store.selectVersion(versionId);
+}
+
+async function compareVersions() {
+  await store.compareVersionPair(baseVersionId.value, targetVersionId.value);
+}
+
+function statusLabel(status) {
+  return {
+    added: "新增",
+    removed: "删除",
+    changed: "修改",
+    unchanged: "未变"
+  }[status] || status;
 }
 </script>

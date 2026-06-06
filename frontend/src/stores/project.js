@@ -1,7 +1,10 @@
 import { defineStore } from "pinia";
 
 import {
+  archiveProject,
+  compareVersions,
   createProject,
+  deleteProject,
   exportScript,
   generateScript,
   getChapters,
@@ -9,6 +12,7 @@ import {
   getScript,
   getTask,
   getVersions,
+  listProjects,
   parseProject,
   rewriteScene,
   updateScene,
@@ -75,6 +79,8 @@ async function waitTask(taskId, attempts = 120, interval = 1000) {
 export const useProjectStore = defineStore("project", {
   state: () => ({
     projectId: readStoredProjectId(),
+    projects: [],
+    showArchivedProjects: false,
     project: null,
     chapters: [],
     scenes: [],
@@ -83,6 +89,7 @@ export const useProjectStore = defineStore("project", {
     selectedScene: null,
     script: null,
     versions: [],
+    versionCompare: null,
     loading: false,
     message: "",
     exportResult: null
@@ -124,7 +131,63 @@ export const useProjectStore = defineStore("project", {
       this.selectedScene = null;
       this.script = null;
       this.versions = [];
+      this.versionCompare = null;
       this.exportResult = null;
+    },
+    async loadProjects(includeArchived = this.showArchivedProjects) {
+      this.showArchivedProjects = includeArchived;
+      const response = await listProjects(includeArchived);
+      this.projects = response.data.items;
+    },
+    async switchProject(projectId) {
+      this.setActiveProject(projectId);
+      this.project = null;
+      this.chapters = [];
+      this.scenes = [];
+      this.selectedVersionId = "";
+      this.selectedSceneId = "";
+      this.selectedScene = null;
+      this.script = null;
+      this.versions = [];
+      this.versionCompare = null;
+      this.exportResult = null;
+      await this.refreshAll();
+    },
+    async archiveActiveProject(projectId) {
+      const targetProjectId = projectId || this.projectId;
+      if (!targetProjectId) {
+        return;
+      }
+      this.loading = true;
+      this.message = "正在归档项目";
+      try {
+        await archiveProject(targetProjectId);
+        if (targetProjectId === this.projectId) {
+          this.clearProjectState();
+        }
+        await this.loadProjects(this.showArchivedProjects);
+        this.message = "项目已归档";
+      } finally {
+        this.loading = false;
+      }
+    },
+    async deleteActiveProject(projectId) {
+      const targetProjectId = projectId || this.projectId;
+      if (!targetProjectId) {
+        return;
+      }
+      this.loading = true;
+      this.message = "正在删除项目";
+      try {
+        await deleteProject(targetProjectId);
+        if (targetProjectId === this.projectId) {
+          this.clearProjectState();
+        }
+        await this.loadProjects(this.showArchivedProjects);
+        this.message = "项目已删除";
+      } finally {
+        this.loading = false;
+      }
     },
     async hydrateProject() {
       if (!this.projectId || this.project) {
@@ -155,6 +218,7 @@ export const useProjectStore = defineStore("project", {
         this.selectedSceneId = "";
         this.selectedScene = null;
         this.exportResult = null;
+        this.versionCompare = null;
         this.project = {
           project_id: projectResponse.data.project_id,
           title: projectResponse.data.title,
@@ -180,6 +244,7 @@ export const useProjectStore = defineStore("project", {
         await waitTask(generateResponse.data.task_id);
 
         await this.refreshAll();
+        await this.loadProjects(this.showArchivedProjects);
         this.message = "项目初始化完成";
       } catch (error) {
         this.message = `项目初始化失败：${getErrorMessage(error, "请检查输入文件")}`;
@@ -248,6 +313,7 @@ export const useProjectStore = defineStore("project", {
       this.selectedVersionId = versionId;
       this.selectedSceneId = "";
       this.exportResult = null;
+      this.versionCompare = null;
       await this.refreshAll();
     },
     async loadScene(sceneId) {
@@ -316,6 +382,24 @@ export const useProjectStore = defineStore("project", {
         this.message = "导出完成";
       } catch (error) {
         this.message = `导出失败：${getErrorMessage(error, "请稍后重试")}`;
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+    async compareVersionPair(baseVersionId, targetVersionId) {
+      if (!this.projectId || !baseVersionId || !targetVersionId) {
+        this.versionCompare = null;
+        return;
+      }
+      this.loading = true;
+      this.message = "正在对比版本";
+      try {
+        const response = await compareVersions(this.projectId, baseVersionId, targetVersionId);
+        this.versionCompare = response.data;
+        this.message = "版本对比完成";
+      } catch (error) {
+        this.message = `版本对比失败：${getErrorMessage(error, "请检查版本")}`;
         throw error;
       } finally {
         this.loading = false;

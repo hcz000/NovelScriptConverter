@@ -14,6 +14,7 @@ This repository is a working prototype, not a production-ready adaptation engine
 Implemented today:
 
 - Project creation
+- Project list, archive, and delete
 - Source upload for `txt` and `md`
 - Chapter splitting for multi-chapter source text
 - Basic summary and character extraction
@@ -22,6 +23,7 @@ Implemented today:
 - Instruction-based scene rewrite flow
 - Optional OpenAI-backed LLM generation and rewrite with rule-based fallback
 - Version tracking
+- Scene-level version comparison
 - YAML / JSON export
 - Backend schema validation for script structure
 - Backend automated tests for the main flow

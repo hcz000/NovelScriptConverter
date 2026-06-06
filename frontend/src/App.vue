@@ -7,6 +7,7 @@
       </div>
       <nav class="nav">
         <RouterLink to="/">导入</RouterLink>
+        <RouterLink to="/projects">项目</RouterLink>
         <RouterLink to="/workspace">工作台</RouterLink>
         <RouterLink to="/versions">版本</RouterLink>
       </nav>

@@ -23,6 +23,7 @@ PROJECT_PARSING = "PARSING"
 PROJECT_READY = "READY"
 PROJECT_GENERATING = "GENERATING"
 PROJECT_SCRIPT_READY = "SCRIPT_READY"
+PROJECT_ARCHIVED = "ARCHIVED"
 
 
 def now_iso() -> str:
@@ -76,6 +77,23 @@ def create_project_record(title: str, language: str) -> dict[str, Any]:
         "chapters": [],
         "versions": [],
         "scripts": {},
+        "archived": False,
+        "archived_at": None,
+    }
+
+
+def summarize_project(project: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "project_id": project["project_id"],
+        "title": project["title"],
+        "status": project["status"],
+        "source_chapter_count": project["source_chapter_count"],
+        "current_version_id": project["current_version_id"],
+        "version_count": len(project.get("versions", [])),
+        "created_at": project["created_at"],
+        "updated_at": project["updated_at"],
+        "archived": bool(project.get("archived")),
+        "archived_at": project.get("archived_at"),
     }
 
 

@@ -4,6 +4,20 @@ export function createProject(payload) {
   return client.post("/projects", payload);
 }
 
+export function listProjects(includeArchived = false) {
+  return client.get("/projects", {
+    params: includeArchived ? { include_archived: true } : {}
+  });
+}
+
+export function archiveProject(projectId) {
+  return client.post(`/projects/${projectId}/archive`);
+}
+
+export function deleteProject(projectId) {
+  return client.delete(`/projects/${projectId}`);
+}
+
 export function uploadSource(projectId, file) {
   const formData = new FormData();
   formData.append("file", file);
@@ -54,6 +68,15 @@ export function rewriteScene(projectId, sceneId, payload) {
 
 export function getVersions(projectId) {
   return client.get(`/projects/${projectId}/versions`);
+}
+
+export function compareVersions(projectId, baseVersionId, targetVersionId) {
+  return client.get(`/projects/${projectId}/versions/compare`, {
+    params: {
+      base_version_id: baseVersionId,
+      target_version_id: targetVersionId
+    }
+  });
 }
 
 export function exportScript(projectId, payload) {

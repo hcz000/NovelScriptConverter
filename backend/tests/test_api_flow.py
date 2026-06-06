@@ -129,6 +129,77 @@ def test_manual_scene_update_tracks_modified_scenes(app_client) -> None:
     assert scene_id in current_version["modified_scenes"]
 
 
+def test_project_list_archive_and_delete(app_client) -> None:
+    first_project_id = create_project(app_client)
+    second_project_id = create_project(app_client)
+
+    list_response = app_client.get("/api/v1/projects")
+    assert list_response.status_code == 200
+    projects = list_response.json()["data"]["items"]
+    assert {project["project_id"] for project in projects} == {first_project_id, second_project_id}
+
+    archive_response = app_client.post(f"/api/v1/projects/{first_project_id}/archive")
+    assert archive_response.status_code == 200
+    assert archive_response.json()["data"]["archived"] is True
+
+    active_list_response = app_client.get("/api/v1/projects")
+    active_projects = active_list_response.json()["data"]["items"]
+    assert {project["project_id"] for project in active_projects} == {second_project_id}
+
+    all_list_response = app_client.get("/api/v1/projects", params={"include_archived": True})
+    all_projects = all_list_response.json()["data"]["items"]
+    assert {project["project_id"] for project in all_projects} == {first_project_id, second_project_id}
+
+    delete_response = app_client.delete(f"/api/v1/projects/{second_project_id}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["data"]["deleted"] is True
+
+    missing_response = app_client.get(f"/api/v1/projects/{second_project_id}")
+    assert missing_response.status_code == 404
+
+
+def test_version_compare_reports_changed_scene(app_client) -> None:
+    project_id = create_project(app_client)
+    upload_source(app_client, project_id)
+
+    parse_response = app_client.post(
+        f"/api/v1/projects/{project_id}/parse",
+        json={"min_chapter_count": 3, "split_mode": "auto"},
+    )
+    wait_for_task(app_client, parse_response.json()["data"]["task_id"])
+
+    generate_response = app_client.post(
+        f"/api/v1/projects/{project_id}/generate",
+        json={"target_format": "yaml", "scene_granularity": "standard", "include_report": True},
+    )
+    generate_task = wait_for_task(app_client, generate_response.json()["data"]["task_id"])
+    base_version_id = generate_task["result"]["current_version_id"]
+
+    scenes_response = app_client.get(f"/api/v1/projects/{project_id}/scenes")
+    scene_id = scenes_response.json()["data"]["items"][0]["scene_id"]
+
+    rewrite_response = app_client.post(
+        f"/api/v1/projects/{project_id}/scenes/{scene_id}/rewrite",
+        json={"instruction": "增强冲突张力", "create_new_version": True},
+    )
+    rewrite_task = wait_for_task(app_client, rewrite_response.json()["data"]["task_id"])
+    target_version_id = rewrite_task["result"]["current_version_id"]
+
+    compare_response = app_client.get(
+        f"/api/v1/projects/{project_id}/versions/compare",
+        params={
+            "base_version_id": base_version_id,
+            "target_version_id": target_version_id,
+        },
+    )
+    assert compare_response.status_code == 200
+    comparison = compare_response.json()["data"]
+    assert comparison["summary"]["changed"] >= 1
+    changed_scene = next(scene for scene in comparison["scenes"] if scene["scene_id"] == scene_id)
+    assert changed_scene["status"] == "changed"
+    assert "beats" in changed_scene["changed_fields"]
+
+
 def test_invalid_upload_returns_structured_error(app_client) -> None:
     project_id = create_project(app_client)
     response = app_client.post(

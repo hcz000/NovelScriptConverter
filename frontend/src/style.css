@@ -231,12 +231,68 @@ select {
 }
 
 .scene-list,
-.version-list {
+.version-list,
+.project-list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
   gap: 12px;
+}
+
+.button-row,
+.project-actions,
+.compare-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toggle-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid rgba(109, 90, 72, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.88);
+}
+
+.project-main {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-main.selected strong {
+  color: var(--accent-dark);
+}
+
+.project-main span,
+.status-pill {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.status-pill {
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: #fff3e4;
 }
 
 .scene-item {
@@ -319,6 +375,35 @@ select {
   background: #fff3e4;
 }
 
+.compare-card {
+  grid-column: 1 / -1;
+}
+
+.compare-result {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.summary-grid span,
+.diff-row {
+  padding: 12px;
+  border: 1px solid rgba(109, 90, 72, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.94);
+}
+
+.diff-row p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
 .empty-state {
   padding: 48px 24px;
   border: 1px dashed var(--border);
@@ -344,6 +429,11 @@ select {
   }
 
   .grid.two-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .project-row,
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 

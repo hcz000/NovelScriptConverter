@@ -14,6 +14,8 @@ from app.schemas import (
     UpdateSceneRequest,
 )
 from app.services.pipeline import (
+    PROJECT_ARCHIVED,
+    compare_scripts,
     create_project_record,
     create_task_record,
     ensure_current_script,
@@ -23,10 +25,12 @@ from app.services.pipeline import (
     generate_project_script,
     make_error_response,
     make_success_response,
+    now_iso,
     parse_project_source,
     patch_scene,
     rewrite_scene_task,
     save_upload_file,
+    summarize_project,
     touch_project,
 )
 
@@ -50,19 +54,38 @@ def create_router(store: DataStore) -> APIRouter:
             }
         )
 
+    @router.get("/projects")
+    def list_projects(include_archived: bool = Query(default=False)) -> dict[str, Any]:
+        projects = [summarize_project(project) for project in store.list_projects(include_archived)]
+        return make_success_response({"total": len(projects), "items": projects})
+
     @router.get("/projects/{project_id}")
     def get_project(project_id: str) -> dict[str, Any]:
         project = ensure_project(store, project_id)
-        payload = {
-            "project_id": project["project_id"],
-            "title": project["title"],
-            "status": project["status"],
-            "source_chapter_count": project["source_chapter_count"],
-            "current_version_id": project["current_version_id"],
-            "created_at": project["created_at"],
-            "updated_at": project["updated_at"],
-        }
-        return make_success_response(payload)
+        return make_success_response(summarize_project(project))
+
+    @router.post("/projects/{project_id}/archive")
+    def archive_project(project_id: str) -> dict[str, Any]:
+        project = ensure_project(store, project_id)
+        updated = touch_project(
+            store,
+            project["project_id"],
+            status=PROJECT_ARCHIVED,
+            archived=True,
+            archived_at=project.get("archived_at") or now_iso(),
+        )
+        assert updated is not None
+        return make_success_response(summarize_project(updated))
+
+    @router.delete("/projects/{project_id}")
+    def delete_project(project_id: str) -> dict[str, Any]:
+        deleted = store.delete_project(project_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=make_error_response(40401, "project not found"),
+            )
+        return make_success_response({"project_id": project_id, "deleted": True})
 
     @router.post("/projects/{project_id}/source")
     async def upload_source(project_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
@@ -258,6 +281,29 @@ def create_router(store: DataStore) -> APIRouter:
             {
                 "total": len(project["versions"]),
                 "items": project["versions"],
+            }
+        )
+
+    @router.get("/projects/{project_id}/versions/compare")
+    def compare_versions(
+        project_id: str,
+        base_version_id: str = Query(...),
+        target_version_id: str = Query(...),
+    ) -> dict[str, Any]:
+        project = ensure_project(store, project_id)
+        base_script = project["scripts"].get(base_version_id)
+        target_script = project["scripts"].get(target_version_id)
+        if base_script is None or target_script is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=make_error_response(40403, "version not found"),
+            )
+        comparison = compare_scripts(base_script, target_script)
+        return make_success_response(
+            {
+                "base_version_id": base_version_id,
+                "target_version_id": target_version_id,
+                **comparison,
             }
         )
 

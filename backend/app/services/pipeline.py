@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.core import config
 from app.services.common import (
     PROJECT_GENERATING,
+    PROJECT_ARCHIVED,
     PROJECT_INIT,
     PROJECT_PARSING,
     PROJECT_READY,
@@ -27,6 +28,7 @@ from app.services.common import (
     now_iso,
     read_source_text,
     save_upload_file,
+    summarize_project,
     touch_project,
     update_task,
 )
@@ -59,6 +61,7 @@ from app.services.script_builder import (
 )
 from app.services.script_ops import (
     clone_script,
+    compare_scripts,
     dump_script_content,
     find_scene,
     next_version_name,

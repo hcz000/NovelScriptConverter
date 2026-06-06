@@ -111,6 +111,17 @@ class DataStore:
                 project = self._get_project_unlocked(connection, project_id)
                 return deepcopy(project) if project else None
 
+    def list_projects(self, include_archived: bool = False) -> list[dict[str, Any]]:
+        with self._lock:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    "SELECT payload FROM projects ORDER BY COALESCE(updated_at, created_at) DESC"
+                ).fetchall()
+                projects = [self._decode_payload(row["payload"]) for row in rows]
+                if not include_archived:
+                    projects = [project for project in projects if not project.get("archived")]
+                return deepcopy(projects)
+
     def upsert_project(self, project: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             with self._connect() as connection:
@@ -130,6 +141,13 @@ class DataStore:
                 updated = updater(deepcopy(project))
                 self._upsert_project_unlocked(connection, updated)
                 return deepcopy(updated)
+
+    def delete_project(self, project_id: str) -> bool:
+        with self._lock:
+            with self._connect() as connection:
+                cursor = connection.execute("DELETE FROM projects WHERE project_id = ?", (project_id,))
+                connection.execute("DELETE FROM tasks WHERE project_id = ?", (project_id,))
+                return cursor.rowcount > 0
 
     def _get_task_unlocked(self, connection: sqlite3.Connection, task_id: str) -> dict[str, Any] | None:
         row = connection.execute(
