@@ -87,6 +87,20 @@ class SourceSummarySchema(BaseModel):
     premise: str = Field(..., min_length=1, max_length=300)
     main_conflict: str = Field(..., min_length=1, max_length=300)
     main_characters: list[CharacterProfileSchema] = Field(..., min_length=1, max_length=5)
+    conflict_keywords: list[str] = Field(default_factory=list, max_length=6)
+    chapter_highlights: list[str] = Field(default_factory=list, max_length=6)
+
+
+class CharacterRelationSchema(BaseModel):
+    pair: str = Field(..., min_length=1, max_length=100)
+    relationship: str = Field(..., min_length=1, max_length=100)
+
+
+class ScenePlanEntrySchema(BaseModel):
+    scene_id: str = Field(..., pattern=r"^SC\d{3}$")
+    chapter_id: str = Field(..., pattern=r"^CH\d{3}$")
+    focus: str = Field(..., min_length=1, max_length=200)
+    characters: list[str] = Field(..., min_length=1, max_length=6)
 
 
 class ProjectMetaSchema(BaseModel):
@@ -109,6 +123,8 @@ class ScriptMetadataSchema(BaseModel):
     estimated_runtime_minutes: int = Field(..., ge=1)
     editable: bool
     scene_density: float | None = Field(default=None, ge=0)
+    chapter_to_scene_count: dict[str, int] = Field(default_factory=dict)
+    conflict_keywords: list[str] = Field(default_factory=list, max_length=8)
 
 
 class ScriptSchema(BaseModel):
@@ -118,6 +134,8 @@ class ScriptSchema(BaseModel):
     scenes: list[SceneSchema] = Field(..., min_length=1)
     metadata: ScriptMetadataSchema
     versions: list[ScriptVersionEntrySchema]
+    character_relations: list[CharacterRelationSchema] = Field(default_factory=list)
+    scene_plan: list[ScenePlanEntrySchema] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_scene_counts(self) -> "ScriptSchema":
@@ -125,6 +143,8 @@ class ScriptSchema(BaseModel):
             raise ValueError("metadata.total_scenes does not match scenes length")
         if self.project.source_chapter_count != len(self.chapters):
             raise ValueError("project.source_chapter_count does not match chapters length")
+        if self.scene_plan and len(self.scene_plan) != len(self.scenes):
+            raise ValueError("scene_plan length does not match scenes length")
         return self
 
 

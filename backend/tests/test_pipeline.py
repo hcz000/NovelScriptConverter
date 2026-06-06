@@ -57,6 +57,31 @@ def test_build_script_creates_multiple_scenes_and_validates() -> None:
     assert len(validated["scenes"]) >= 2
     assert validated["metadata"]["total_scenes"] == len(validated["scenes"])
     assert validated["scenes"][0]["beats"]
+    assert validated["scene_plan"]
+    assert validated["metadata"]["chapter_to_scene_count"]
+    assert "conflict_keywords" in validated["source_summary"]
+
+
+def test_build_script_includes_character_relations() -> None:
+    raw = [
+        {
+            "title": "第一章 对峙",
+            "text": "林凡看着苏青。苏青没有退让。赵岩也站在一旁看着两人。",
+        },
+        {
+            "title": "第二章 余波",
+            "text": "林凡再次遇见苏青，赵岩仍旧在场，三人之间的气氛更紧。",
+        },
+        {
+            "title": "第三章 试探",
+            "text": "林凡主动试探赵岩，苏青则继续观察局面。",
+        },
+    ]
+    chapters = build_chapters(raw)
+    script = build_script({"title": "测试项目", "language": "zh-CN"}, chapters)
+    validated = validate_script_payload(script)
+
+    assert validated["character_relations"]
 
 
 def test_apply_rewrite_instruction_updates_scene_notes() -> None:

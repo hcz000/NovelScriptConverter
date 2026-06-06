@@ -579,6 +579,29 @@ def build_character_profiles(chapters: list[dict[str, Any]]) -> list[dict[str, A
     return profiles
 
 
+def build_character_relations(chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    pair_counter = Counter()
+    for chapter in chapters:
+        characters = chapter["characters"][:4]
+        for index, left in enumerate(characters):
+            for right in characters[index + 1 :]:
+                pair_counter[tuple(sorted((left, right)))] += 1
+
+    relations: list[dict[str, Any]] = []
+    for (left, right), count in pair_counter.most_common(5):
+        if count >= 2:
+            relationship = "高频同场角色关系"
+        else:
+            relationship = "同章关联角色"
+        relations.append(
+            {
+                "pair": f"{left} / {right}",
+                "relationship": relationship,
+            }
+        )
+    return relations
+
+
 def build_scene_from_group(
     chapter: dict[str, Any],
     scene_index: int,
@@ -615,6 +638,24 @@ def build_scene_from_group(
     }
 
 
+def build_scene_plan_entry(scene: dict[str, Any]) -> dict[str, Any]:
+    source_ref = scene["source_refs"][0]
+    return {
+        "scene_id": scene["scene_id"],
+        "chapter_id": source_ref["chapter_id"],
+        "focus": scene["purpose"][:120],
+        "characters": scene["characters"],
+    }
+
+
+def build_chapter_to_scene_count(scenes: list[dict[str, Any]]) -> dict[str, int]:
+    mapping = Counter()
+    for scene in scenes:
+        for source_ref in scene.get("source_refs", []):
+            mapping[source_ref["chapter_id"]] += 1
+    return dict(mapping)
+
+
 def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dict[str, Any]:
     scenes: list[dict[str, Any]] = []
     chapter_summaries = [
@@ -640,6 +681,9 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
         if conflict_seed
         else "故事围绕角色目标与外部阻力之间的持续冲突展开。"
     )
+    chapter_highlights = [chapter["summary"][:60] for chapter in chapters[:5]]
+    scene_plan = [build_scene_plan_entry(scene) for scene in scenes]
+    chapter_to_scene_count = build_chapter_to_scene_count(scenes)
 
     return {
         "project": {
@@ -654,6 +698,8 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
             "premise": premise,
             "main_conflict": main_conflict,
             "main_characters": build_character_profiles(chapters),
+            "conflict_keywords": conflict_seed,
+            "chapter_highlights": chapter_highlights,
         },
         "chapters": chapter_summaries,
         "scenes": scenes,
@@ -662,8 +708,12 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
             "estimated_runtime_minutes": max(5, len(scenes) * 4),
             "editable": True,
             "scene_density": round(len(scenes) / max(1, len(chapters)), 2),
+            "chapter_to_scene_count": chapter_to_scene_count,
+            "conflict_keywords": conflict_seed,
         },
         "versions": [],
+        "character_relations": build_character_relations(chapters),
+        "scene_plan": scene_plan,
     }
 
 
