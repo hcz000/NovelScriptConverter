@@ -1,17 +1,38 @@
 # NovelScriptConverter
 
-这是一个基于 `FastAPI + Vue 3 + Vite` 的小说转剧本工作台原型。
+`NovelScriptConverter` is a prototype workspace for turning long-form novel text into editable scene-based script drafts.
 
-## 目录结构
+The stack is:
 
-```text
-backend/   FastAPI 后端
-frontend/  Vue 3 + Vite 前端
-开发文档.md
-接口文档.md
-```
+- `backend/`: FastAPI
+- `frontend/`: Vue 3 + Vite
 
-## 后端启动
+## Current scope
+
+This repository is a working prototype, not a production-ready adaptation engine.
+
+Implemented today:
+
+- Project creation
+- Source upload for `txt` and `md`
+- Chapter splitting for multi-chapter source text
+- Basic summary and character extraction
+- Scene-oriented script draft generation
+- Scene editing in the workspace
+- Instruction-based scene rewrite flow
+- Version tracking
+- YAML / JSON export
+- Backend schema validation for script structure
+- Backend automated tests for the main flow
+
+Important constraints:
+
+- Script generation and rewrite are still rule-based prototype logic
+- Data is stored in local JSON, not a database
+- Tasks run through FastAPI `BackgroundTasks`
+- The frontend polls task state instead of using streaming or websockets
+
+## Run backend
 
 ```bash
 cd backend
@@ -19,12 +40,12 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-启动后访问：
+Backend endpoints:
 
-- Swagger 文档：`http://127.0.0.1:8000/docs`
-- OpenAPI：`http://127.0.0.1:8000/openapi.json`
+- Swagger: `http://127.0.0.1:8000/docs`
+- OpenAPI: `http://127.0.0.1:8000/openapi.json`
 
-## 前端启动
+## Run frontend
 
 ```bash
 cd frontend
@@ -32,23 +53,29 @@ npm install
 npm run dev
 ```
 
-启动后访问：
+Frontend URL:
 
-- 前端页面：`http://127.0.0.1:5173`
+- `http://127.0.0.1:5173`
 
-## 当前已实现
+## Run tests
 
-- 项目创建
-- 小说文件上传
-- 章节自动切分与摘要生成
-- 剧本初稿生成
-- 场景列表与详情查看
-- 场景人工编辑
-- 场景 AI 重写占位流程
-- 版本记录与导出
+```bash
+cd backend
+pytest -q
+```
 
-## 当前说明
+## Repository notes
 
-- 当前版本使用本地 `JSON` 文件作为简易持久化存储，文件位于 `backend/data/store.json`
-- 异步任务通过 FastAPI `BackgroundTasks` 实现，前端采用轮询获取进度
-- 剧本生成与重写目前为规则驱动原型，后续可替换为真实大模型调用
+- Runtime project data is written under `backend/data/`
+- Export files are generated under `backend/data/exports/`
+- Uploaded source files are stored under `backend/data/uploads/`
+
+## What is still missing
+
+The following are not done yet:
+
+- Real LLM-based novel understanding and rewrite quality
+- Rich plot graph / conflict graph modeling
+- Strong fidelity evaluation
+- Database persistence
+- Authentication and multi-user support

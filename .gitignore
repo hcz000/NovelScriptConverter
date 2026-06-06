@@ -15,7 +15,3 @@ backend/data/
 # Local environment
 .env
 .env.*
-
-# Project docs not for remote upload
-开发文档.md
-接口文档.md
