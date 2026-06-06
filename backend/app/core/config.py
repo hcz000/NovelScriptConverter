@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 
@@ -11,3 +12,6 @@ APP_TITLE = "AI Adaptation Studio API"
 APP_VERSION = "0.1.0"
 API_PREFIX = "/api/v1"
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "rule")

@@ -13,6 +13,7 @@ from fastapi import HTTPException, status
 from app.core.config import API_PREFIX, EXPORTS_DIR, UPLOADS_DIR
 from app.core.store import DataStore
 from app.schemas import validate_script_payload
+from app.services.llm_provider import request_json_object
 
 try:
     import yaml
@@ -761,6 +762,32 @@ def apply_rewrite_instruction(scene: dict[str, Any], instruction: str) -> None:
     }
 
 
+def llm_rewrite_scene(scene: dict[str, Any], instruction: str) -> dict[str, Any] | None:
+    payload = {
+        "title": scene["title"],
+        "purpose": scene["purpose"],
+        "characters": scene["characters"],
+        "dramatic_structure": scene["dramatic_structure"],
+        "beats": scene["beats"],
+        "adaptation_notes": scene["adaptation_notes"],
+    }
+    system_prompt = (
+        "你是小说改编编剧助手。"
+        "请只重写输入场景的 beats、purpose、dramatic_structure、adaptation_notes，"
+        "保持 scene_id、title、slugline、source_refs、characters 不变。"
+        "输出必须是单个 JSON 对象。"
+    )
+    user_prompt = (
+        f"重写指令：{instruction}\n"
+        f"原场景 JSON：{json.dumps(payload, ensure_ascii=False)}\n"
+        "请返回字段：purpose, dramatic_structure, beats, adaptation_notes。"
+    )
+    result = request_json_object(system_prompt, user_prompt)
+    if not result:
+        return None
+    return result
+
+
 def next_version_name(existing_versions: list[dict[str, Any]]) -> str:
     if not existing_versions:
         return "v1.0"
@@ -980,7 +1007,17 @@ def rewrite_scene_task(
         )
         return
 
-    apply_rewrite_instruction(scene, instruction)
+    llm_result = llm_rewrite_scene(scene, instruction)
+    if llm_result:
+        for field in ("purpose", "dramatic_structure", "beats", "adaptation_notes"):
+            if field in llm_result and llm_result[field] is not None:
+                scene[field] = llm_result[field]
+        scene["adaptation_notes"] = {
+            **scene.get("adaptation_notes", {}),
+            "style": instruction,
+        }
+    else:
+        apply_rewrite_instruction(scene, instruction)
 
     working_script = validate_script_or_raise(working_script)
 

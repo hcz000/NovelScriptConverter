@@ -1,6 +1,3 @@
-from pathlib import Path
-
-
 def create_project(client) -> str:
     response = client.post("/api/v1/projects", json={"title": "测试项目", "language": "zh-CN"})
     assert response.status_code == 201

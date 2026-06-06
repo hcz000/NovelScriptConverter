@@ -5,3 +5,4 @@ python-multipart>=0.0.9
 PyYAML>=6.0.2
 pytest>=8.3.0
 httpx>=0.28.0
+openai>=1.30.0

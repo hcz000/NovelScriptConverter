@@ -1,4 +1,5 @@
 from app.schemas import validate_script_payload
+from app.services.llm_provider import llm_enabled
 from app.services.pipeline import (
     apply_rewrite_instruction,
     build_chapters,
@@ -76,3 +77,7 @@ def test_apply_rewrite_instruction_updates_scene_notes() -> None:
 
     assert scene["adaptation_notes"]["rewrite_focus"]
     assert any(beat["type"] == "dialogue" for beat in scene["beats"])
+
+
+def test_llm_provider_disabled_by_default() -> None:
+    assert llm_enabled() is False
