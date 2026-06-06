@@ -302,72 +302,264 @@ def build_chapters(raw_chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for index, chapter in enumerate(raw_chapters, start=1):
         chapter_text = chapter["text"].strip()
         summary = summarize_text(chapter_text)
-        chapters.append(
-            {
-                "chapter_id": f"CH{index:03d}",
-                "title": chapter["title"][:80],
-                "word_count": len(chapter_text),
-                "summary": summary,
-                "characters": extract_characters(chapter_text),
-                "scene_candidates": 1,
-                "chapter_text": chapter_text,
-            }
-        )
+        chapter_record = {
+            "chapter_id": f"CH{index:03d}",
+            "title": chapter["title"][:80],
+            "word_count": len(chapter_text),
+            "summary": summary,
+            "characters": extract_characters(chapter_text),
+            "scene_candidates": 1,
+            "chapter_text": chapter_text,
+        }
+        chapter_record["scene_candidates"] = max(1, len(derive_scene_groups(chapter_record)))
+        chapters.append(chapter_record)
     return chapters
 
 
-def build_scene(chapter: dict[str, Any], index: int) -> dict[str, Any]:
-    scene_title = chapter["title"][:60]
-    summary = chapter["summary"]
-    characters = chapter["characters"] or ["主角"]
-    primary_character = characters[0]
-    pacing = "快" if index % 2 == 0 else "中"
-    style = "强调冲突推进" if index % 2 == 0 else "强调人物处境"
-    time_of_day = "白天" if index % 2 == 1 else "夜晚"
+def split_paragraphs(text: str) -> list[str]:
+    normalized = text.replace("\r\n", "\n").strip()
+    if not normalized:
+        return []
+    paragraphs = [segment.strip() for segment in re.split(r"\n{2,}", normalized) if segment.strip()]
+    if len(paragraphs) <= 1:
+        paragraphs = [line.strip() for line in normalized.split("\n") if line.strip()]
+    return paragraphs or [normalized]
+
+
+def extract_keywords(text: str, limit: int = 5) -> list[str]:
+    counter = Counter()
+    for token in re.findall(r"[\u4e00-\u9fff]{2,4}", text):
+        if token in STOP_WORDS:
+            continue
+        counter[token] += 1
+    return [token for token, _ in counter.most_common(limit)]
+
+
+def derive_scene_groups(chapter: dict[str, Any]) -> list[list[str]]:
+    paragraphs = split_paragraphs(chapter["chapter_text"])
+    if len(paragraphs) <= 2:
+        return [paragraphs]
+
+    max_group_size = 3 if len(paragraphs) <= 6 else 4
+    transition_markers = (
+        "与此同时",
+        "另一边",
+        "次日",
+        "第二天",
+        "当天夜里",
+        "夜里",
+        "片刻后",
+        "不久",
+        "随后",
+        "忽然",
+        "突然",
+        "回到",
+    )
+
+    groups: list[list[str]] = []
+    current_group: list[str] = []
+    for paragraph in paragraphs:
+        should_split = bool(
+            current_group
+            and (
+                len(current_group) >= max_group_size
+                or (len(current_group) >= 2 and paragraph.startswith(transition_markers))
+            )
+        )
+        if should_split:
+            groups.append(current_group)
+            current_group = []
+        current_group.append(paragraph)
+
+    if current_group:
+        groups.append(current_group)
+
+    if len(groups) == 1 and len(paragraphs) >= 5:
+        midpoint = math.ceil(len(paragraphs) / 2)
+        return [paragraphs[:midpoint], paragraphs[midpoint:]]
+    return groups
+
+
+def extract_dialogue_fragments(paragraph: str) -> list[dict[str, str]]:
+    fragments: list[dict[str, str]] = []
+    quote_matches = re.findall(r"[“\"]([^”\"]{2,40})[”\"]", paragraph)
+    if quote_matches:
+        speaker_match = re.search(r"([\u4e00-\u9fff]{2,4})[说道问喊答叫]", paragraph)
+        speaker = speaker_match.group(1) if speaker_match else ""
+        for content in quote_matches:
+            fragments.append({"character": speaker, "content": content.strip()})
+        return fragments
+
+    colon_match = re.match(r"^\s*([\u4e00-\u9fff]{2,4})[：:]\s*(.+)$", paragraph)
+    if colon_match:
+        fragments.append(
+            {
+                "character": colon_match.group(1).strip(),
+                "content": colon_match.group(2).strip(),
+            }
+        )
+    return fragments
+
+
+def infer_time_of_day(text: str) -> str:
+    if re.search(r"夜|晚|月|深夜|凌晨", text):
+        return "夜晚"
+    if re.search(r"晨|清晨|早上|黎明", text):
+        return "清晨"
+    if re.search(r"黄昏|傍晚|日落", text):
+        return "傍晚"
+    return "白天"
+
+
+def infer_scene_pacing(paragraphs: list[str]) -> str:
+    joined = "".join(paragraphs)
+    action_hits = len(re.findall(r"冲|追|逃|打|杀|撞|喊|奔|闯|爆|推|拦|逼", joined))
+    if action_hits >= 4 or len(paragraphs) <= 2:
+        return "快"
+    if action_hits >= 2:
+        return "中"
+    return "慢"
+
+
+def infer_scene_style(paragraphs: list[str]) -> str:
+    joined = "".join(paragraphs)
+    if re.search(r"争|怒|逼|威胁|质问|反击", joined):
+        return "冲突推进"
+    if re.search(r"想|心|沉默|回忆|犹豫|目光", joined):
+        return "情绪沉浸"
+    return "叙事铺垫"
+
+
+def summarize_paragraph_group(paragraphs: list[str], fallback: str) -> str:
+    summary_source = " ".join(paragraphs[:2]) if paragraphs else fallback
+    return summarize_text(summary_source or fallback, limit=120)
+
+
+def find_scene_characters(paragraphs: list[str], chapter_characters: list[str]) -> list[str]:
+    group_text = "".join(paragraphs)
+    matched = [character for character in chapter_characters if character in group_text]
+    if matched:
+        return matched[:4]
+    extracted = extract_characters(group_text)
+    return extracted[:4] if extracted else (chapter_characters[:4] or ["主角"])
+
+
+def build_beats_from_paragraphs(paragraphs: list[str], characters: list[str]) -> list[dict[str, Any]]:
+    beats: list[dict[str, Any]] = []
+    fallback_character = characters[0] if characters else "主角"
+
+    for paragraph in paragraphs:
+        dialogues = extract_dialogue_fragments(paragraph)
+        narration = re.sub(r"[“\"][^”\"]{2,40}[”\"]", "", paragraph).strip()
+        if narration:
+            beats.append(
+                {
+                    "type": "action",
+                    "content": summarize_text(narration, limit=80),
+                }
+            )
+        for dialogue in dialogues:
+            beats.append(
+                {
+                    "type": "dialogue",
+                    "character": dialogue["character"] or fallback_character,
+                    "content": dialogue["content"],
+                }
+            )
+
+    if not beats:
+        beats.append(
+            {
+                "type": "action",
+                "content": summarize_text(" ".join(paragraphs), limit=90),
+            }
+        )
+    return beats
+
+
+def build_scene_dramatic_structure(
+    chapter: dict[str, Any],
+    paragraphs: list[str],
+    scene_summary: str,
+    characters: list[str],
+) -> dict[str, Any]:
+    primary_character = characters[0] if characters else "主角"
+    conflict_keywords = extract_keywords("".join(paragraphs), limit=3)
+    conflict_label = "、".join(conflict_keywords[:2]) if conflict_keywords else "外部压力"
     return {
-        "scene_id": f"SC{index:03d}",
+        "objective": f"{primary_character}希望推进当前局势，确保“{scene_summary[:18] or chapter['title']}”落地。",
+        "obstacle": f"场景中持续存在{conflict_label}带来的阻碍与误判。",
+        "stakes": f"如果这一场失败，{primary_character}后续将失去主动权。",
+        "turning_point": f"场景后段围绕“{scene_summary[:18] or chapter['title']}”出现新的信息或态度反转。",
+        "emotion_curve": ["铺垫", "拉紧", "转折", "推进"],
+    }
+
+
+def build_character_profiles(chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    appearances = Counter()
+    for chapter in chapters:
+        for character in chapter["characters"]:
+            appearances[character] += 1
+
+    roles = ["主角", "关键配角", "关键配角", "支撑角色", "支撑角色"]
+    default_traits = [
+        ["目标明确", "承压前进", "推动剧情"],
+        ["立场鲜明", "影响决策"],
+        ["制造变量", "推动冲突"],
+        ["补充信息", "强化氛围"],
+        ["辅助推进", "承担功能位"],
+    ]
+
+    profiles: list[dict[str, Any]] = []
+    for index, (name, _) in enumerate(appearances.most_common(5)):
+        profiles.append(
+            {
+                "name": name,
+                "role": roles[index] if index < len(roles) else "支撑角色",
+                "traits": default_traits[index] if index < len(default_traits) else ["待补充"],
+            }
+        )
+    return profiles
+
+
+def build_scene_from_group(
+    chapter: dict[str, Any],
+    scene_index: int,
+    group_index: int,
+    paragraphs: list[str],
+    total_groups: int,
+) -> dict[str, Any]:
+    scene_summary = summarize_paragraph_group(paragraphs, chapter["summary"])
+    characters = find_scene_characters(paragraphs, chapter["characters"])
+    scene_text = "".join(paragraphs)
+    scene_title = chapter["title"][:48]
+    if total_groups > 1:
+        scene_title = f"{scene_title} - 场景{group_index}"
+
+    return {
+        "scene_id": f"SC{scene_index:03d}",
         "title": scene_title,
-        "slugline": f"INT. 改编场景 {index} - {time_of_day}",
-        "purpose": summary,
+        "slugline": f"INT. 改编场景 {scene_index} - {infer_time_of_day(scene_text)}",
+        "purpose": scene_summary,
         "source_refs": [
             {
                 "chapter_id": chapter["chapter_id"],
-                "excerpt_summary": summary,
+                "excerpt_summary": scene_summary,
             }
         ],
         "characters": characters,
-        "dramatic_structure": {
-            "objective": f"{primary_character}试图推动当前剧情向前发展。",
-            "obstacle": "外部压力与内部犹疑同时存在。",
-            "stakes": "如果失败，后续局势会进一步失衡。",
-            "turning_point": "场景末尾出现新的信息或态度转变。",
-            "emotion_curve": ["铺垫", "紧张", "推进"],
-        },
-        "beats": [
-            {
-                "type": "action",
-                "content": summary,
-            },
-            {
-                "type": "dialogue",
-                "character": primary_character,
-                "content": "这一步，我必须继续往前走。",
-            },
-        ],
+        "dramatic_structure": build_scene_dramatic_structure(chapter, paragraphs, scene_summary, characters),
+        "beats": build_beats_from_paragraphs(paragraphs, characters),
         "adaptation_notes": {
-            "pacing": pacing,
-            "style": style,
+            "pacing": infer_scene_pacing(paragraphs),
+            "style": infer_scene_style(paragraphs),
+            "coverage": f"{chapter['chapter_id']} 第 {group_index}/{total_groups} 段场景",
         },
     }
 
 
 def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dict[str, Any]:
-    scenes = [build_scene(chapter, index) for index, chapter in enumerate(chapters, start=1)]
-    main_characters = []
-    for chapter in chapters:
-        for character in chapter["characters"]:
-            if character not in main_characters:
-                main_characters.append(character)
+    scenes: list[dict[str, Any]] = []
     chapter_summaries = [
         {
             "chapter_id": chapter["chapter_id"],
@@ -376,6 +568,22 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
         }
         for chapter in chapters
     ]
+
+    scene_index = 1
+    for chapter in chapters:
+        groups = derive_scene_groups(chapter)
+        for group_index, paragraphs in enumerate(groups, start=1):
+            scenes.append(build_scene_from_group(chapter, scene_index, group_index, paragraphs, len(groups)))
+            scene_index += 1
+
+    premise = summarize_text(" ".join(chapter["summary"] for chapter in chapters[:3]), limit=140)
+    conflict_seed = extract_keywords(" ".join(chapter["summary"] for chapter in chapters), limit=4)
+    main_conflict = (
+        f"故事围绕{'、'.join(conflict_seed[:2])}展开，角色必须在连续冲突中争取主动。"
+        if conflict_seed
+        else "故事围绕角色目标与外部阻力之间的持续冲突展开。"
+    )
+
     return {
         "project": {
             "title": f"{project['title']} - 剧本初稿",
@@ -386,16 +594,9 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
             "version": "1.0",
         },
         "source_summary": {
-            "premise": chapter_summaries[0]["summary"] if chapter_summaries else "",
-            "main_conflict": "角色需要在持续升级的冲突中完成目标。",
-            "main_characters": [
-                {
-                    "name": character,
-                    "role": "主要角色",
-                    "traits": ["待补充"],
-                }
-                for character in main_characters[:5]
-            ],
+            "premise": premise,
+            "main_conflict": main_conflict,
+            "main_characters": build_character_profiles(chapters),
         },
         "chapters": chapter_summaries,
         "scenes": scenes,
@@ -403,8 +604,104 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
             "total_scenes": len(scenes),
             "estimated_runtime_minutes": max(5, len(scenes) * 4),
             "editable": True,
+            "scene_density": round(len(scenes) / max(1, len(chapters)), 2),
         },
         "versions": [],
+    }
+
+
+def build_rewrite_profile(instruction: str) -> dict[str, bool]:
+    normalized = instruction.strip()
+    return {
+        "compress_pacing": any(keyword in normalized for keyword in ("压缩", "更快", "短剧", "节奏")),
+        "enhance_conflict": any(keyword in normalized for keyword in ("冲突", "对抗", "张力", "矛盾", "逼迫")),
+        "expand_emotion": any(keyword in normalized for keyword in ("情绪", "心理", "共鸣", "感染", "情感")),
+        "highlight_turning_point": any(keyword in normalized for keyword in ("反转", "爆点", "爽点", "钩子")),
+    }
+
+
+def rewrite_action_content(content: str, profile: dict[str, bool]) -> str:
+    rewritten = content.strip()
+    if profile["compress_pacing"] and len(rewritten) > 28:
+        rewritten = summarize_text(rewritten, limit=28)
+    if profile["enhance_conflict"] and "对抗" not in rewritten and "冲突" not in rewritten:
+        rewritten = f"{rewritten}，现场的对抗感被进一步拉高。"
+    if profile["expand_emotion"] and "情绪" not in rewritten:
+        rewritten = f"{rewritten}，人物情绪也因此被推到更显性的位置。"
+    if profile["highlight_turning_point"] and "反转" not in rewritten and "转折" not in rewritten:
+        rewritten = f"{rewritten}，并为后续反转埋下钩子。"
+    return rewritten
+
+
+def rewrite_dialogue_content(content: str, profile: dict[str, bool]) -> str:
+    rewritten = content.strip().rstrip("。！？!?")
+    if profile["compress_pacing"] and len(rewritten) > 16:
+        rewritten = summarize_text(rewritten, limit=16).rstrip("。！？!?")
+    if profile["enhance_conflict"]:
+        return f"{rewritten}，你敢不敢正面回应？"
+    if profile["highlight_turning_point"]:
+        return f"{rewritten}，这次该换你接招了。"
+    return f"{rewritten}。"
+
+
+def apply_rewrite_instruction(scene: dict[str, Any], instruction: str) -> None:
+    profile = build_rewrite_profile(instruction)
+    rewritten_beats: list[dict[str, Any]] = []
+
+    for beat in scene.get("beats", []):
+        rewritten = deepcopy(beat)
+        if beat["type"] == "action":
+            rewritten["content"] = rewrite_action_content(beat["content"], profile)
+        elif beat["type"] == "dialogue":
+            rewritten["content"] = rewrite_dialogue_content(beat["content"], profile)
+        rewritten_beats.append(rewritten)
+
+    if profile["enhance_conflict"]:
+        rewritten_beats.append(
+            {
+                "type": "action",
+                "content": "双方的立场被迫提前摊开，场面进入更直接的对抗。",
+            }
+        )
+    if profile["highlight_turning_point"]:
+        rewritten_beats.append(
+            {
+                "type": "dialogue",
+                "character": scene["characters"][0] if scene.get("characters") else "主角",
+                "content": "这一回合到这里为止，真正的局面现在才开始。",
+            }
+        )
+
+    if profile["compress_pacing"] and len(rewritten_beats) > 5:
+        rewritten_beats = rewritten_beats[:4] + [rewritten_beats[-1]]
+
+    scene["beats"] = rewritten_beats
+    scene["purpose"] = rewrite_action_content(scene.get("purpose", ""), profile)
+    scene["dramatic_structure"] = {
+        **scene.get("dramatic_structure", {}),
+        "obstacle": rewrite_action_content(scene["dramatic_structure"]["obstacle"], profile),
+        "stakes": rewrite_action_content(scene["dramatic_structure"]["stakes"], profile),
+        "turning_point": rewrite_action_content(scene["dramatic_structure"]["turning_point"], profile),
+    }
+    scene["adaptation_notes"] = {
+        **scene.get("adaptation_notes", {}),
+        "style": instruction,
+        "pacing": (
+            "快"
+            if profile["compress_pacing"] or profile["highlight_turning_point"]
+            else scene.get("adaptation_notes", {}).get("pacing", "中")
+        ),
+        "rewrite_focus": "、".join(
+            label
+            for enabled, label in (
+                (profile["compress_pacing"], "节奏压缩"),
+                (profile["enhance_conflict"], "冲突强化"),
+                (profile["expand_emotion"], "情绪放大"),
+                (profile["highlight_turning_point"], "反转前置"),
+            )
+            if enabled
+        )
+        or "局部润色",
     }
 
 
@@ -616,17 +913,7 @@ def rewrite_scene_task(
         )
         return
 
-    scene["beats"].append(
-        {
-            "type": "action",
-            "content": f"重写指令生效：{instruction}",
-        }
-    )
-    scene["adaptation_notes"] = {
-        **scene.get("adaptation_notes", {}),
-        "style": instruction,
-        "pacing": "快",
-    }
+    apply_rewrite_instruction(scene, instruction)
 
     def updater(current: dict[str, Any]) -> dict[str, Any]:
         if create_new_version:
