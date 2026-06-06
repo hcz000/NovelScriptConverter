@@ -87,6 +87,7 @@ import { computed, reactive, ref, watch } from "vue";
 
 import StatusBanner from "../components/StatusBanner.vue";
 import { useProjectStore } from "../stores/project";
+import { toYaml } from "../utils/yaml";
 
 const store = useProjectStore();
 const rewriteInstruction = ref("");
@@ -101,7 +102,7 @@ const formattedScript = computed(() => {
   if (!store.script) {
     return "暂无剧本数据";
   }
-  return JSON.stringify(store.script, null, 2);
+  return toYaml(store.script);
 });
 
 watch(
