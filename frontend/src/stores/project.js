@@ -6,8 +6,6 @@ import {
   generateScript,
   getChapters,
   getProject,
-  getScene,
-  getScenes,
   getScript,
   getTask,
   getVersions,
@@ -133,9 +131,9 @@ export const useProjectStore = defineStore("project", {
       try {
         await this.refreshAll();
         this.message = "项目已恢复";
-      } catch (_) {
+      } catch (error) {
         this.clearProjectState();
-        this.message = "";
+        this.message = error?.message ? `项目恢复失败：${error.message}` : "项目恢复失败";
       } finally {
         this.loading = false;
       }
