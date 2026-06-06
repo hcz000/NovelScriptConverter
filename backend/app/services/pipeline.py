@@ -12,6 +12,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import API_PREFIX, EXPORTS_DIR, UPLOADS_DIR
 from app.core.store import DataStore
+from app.schemas import validate_script_payload
 
 try:
     import yaml
@@ -728,6 +729,16 @@ def find_scene(script: dict[str, Any], scene_id: str) -> dict[str, Any] | None:
     return next((scene for scene in script["scenes"] if scene["scene_id"] == scene_id), None)
 
 
+def validate_script_or_raise(script: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return validate_script_payload(script)
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=make_error_response(42201, f"script validation failed: {error}"),
+        ) from error
+
+
 def parse_project_source(store: DataStore, project_id: str, task_id: str, min_chapter_count: int) -> None:
     update_task(store, task_id, status=TASK_RUNNING, progress=10)
     touch_project(store, project_id, status=PROJECT_PARSING)
@@ -787,7 +798,7 @@ def generate_project_script(
         )
         return
 
-    script = build_script(project, chapters)
+    script = validate_script_or_raise(build_script(project, chapters))
     version_id = make_id("ver")
     version_name = next_version_name(project.get("versions", []))
     version_record = {
@@ -866,6 +877,7 @@ def patch_scene(
             if scene_id not in modified_scenes:
                 modified_scenes.append(scene_id)
             current_version["created_at"] = now_iso()
+        script = validate_script_or_raise(script)
         current["scripts"][version_id] = script
         current["updated_at"] = now_iso()
         return current
@@ -914,6 +926,8 @@ def rewrite_scene_task(
         return
 
     apply_rewrite_instruction(scene, instruction)
+
+    working_script = validate_script_or_raise(working_script)
 
     def updater(current: dict[str, Any]) -> dict[str, Any]:
         if create_new_version:
@@ -969,7 +983,7 @@ def export_script_task(
             error_message="version not found",
         )
         return
-    script = project["scripts"][active_version_id]
+    script = validate_script_or_raise(project["scripts"][active_version_id])
     content = dump_script_content(script, export_format)
     suffix = "json" if export_format.lower() == "json" else "yaml"
     file_name = f"{project_id}_{active_version_id}.{suffix}"

@@ -1,6 +1,6 @@
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CreateProjectRequest(BaseModel):
@@ -19,17 +19,126 @@ class GenerateScriptRequest(BaseModel):
     include_report: bool = Field(default=True)
 
 
+class BeatSchema(BaseModel):
+    type: Literal["action", "dialogue"]
+    content: str = Field(..., min_length=1, max_length=500)
+    character: str | None = Field(default=None, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_dialogue_character(self) -> "BeatSchema":
+        if self.type == "dialogue" and not self.character:
+            raise ValueError("dialogue beat requires character")
+        return self
+
+
+class SourceRefSchema(BaseModel):
+    chapter_id: str = Field(..., min_length=1, max_length=20)
+    excerpt_summary: str = Field(..., min_length=1, max_length=300)
+
+
+class DramaticStructureSchema(BaseModel):
+    objective: str = Field(..., min_length=1, max_length=300)
+    obstacle: str = Field(..., min_length=1, max_length=300)
+    stakes: str = Field(..., min_length=1, max_length=300)
+    turning_point: str = Field(..., min_length=1, max_length=300)
+    emotion_curve: list[str] = Field(..., min_length=3, max_length=6)
+
+
+class AdaptationNotesSchema(BaseModel):
+    pacing: str = Field(..., min_length=1, max_length=50)
+    style: str = Field(..., min_length=1, max_length=100)
+    coverage: str | None = Field(default=None, max_length=100)
+    rewrite_focus: str | None = Field(default=None, max_length=100)
+
+
+class SceneSchema(BaseModel):
+    scene_id: str = Field(..., pattern=r"^SC\d{3}$")
+    title: str = Field(..., min_length=1, max_length=120)
+    slugline: str = Field(..., min_length=1, max_length=120)
+    purpose: str = Field(..., min_length=1, max_length=300)
+    source_refs: list[SourceRefSchema] = Field(..., min_length=1)
+    characters: list[str] = Field(..., min_length=1, max_length=6)
+    dramatic_structure: DramaticStructureSchema
+    beats: list[BeatSchema] = Field(..., min_length=1, max_length=12)
+    adaptation_notes: AdaptationNotesSchema
+
+    @model_validator(mode="after")
+    def validate_dialogue_characters(self) -> "SceneSchema":
+        character_set = set(self.characters)
+        for beat in self.beats:
+            if beat.type == "dialogue" and beat.character not in character_set:
+                raise ValueError(f"dialogue character '{beat.character}' not in scene characters")
+        return self
+
+
+class ChapterSchema(BaseModel):
+    chapter_id: str = Field(..., pattern=r"^CH\d{3}$")
+    title: str = Field(..., min_length=1, max_length=120)
+    summary: str = Field(..., min_length=1, max_length=300)
+
+
+class CharacterProfileSchema(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    role: str = Field(..., min_length=1, max_length=50)
+    traits: list[str] = Field(..., min_length=1, max_length=5)
+
+
+class SourceSummarySchema(BaseModel):
+    premise: str = Field(..., min_length=1, max_length=300)
+    main_conflict: str = Field(..., min_length=1, max_length=300)
+    main_characters: list[CharacterProfileSchema] = Field(..., min_length=1, max_length=5)
+
+
+class ProjectMetaSchema(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    source_type: Literal["novel"]
+    source_chapter_count: int = Field(..., ge=1, le=200)
+    language: str = Field(..., min_length=2, max_length=20)
+    created_at: str = Field(..., min_length=8, max_length=40)
+    version: str = Field(..., min_length=1, max_length=20)
+
+
+class ScriptVersionEntrySchema(BaseModel):
+    version: str = Field(..., min_length=1, max_length=20)
+    created_at: str = Field(..., min_length=8, max_length=40)
+    description: str = Field(..., min_length=1, max_length=200)
+
+
+class ScriptMetadataSchema(BaseModel):
+    total_scenes: int = Field(..., ge=1)
+    estimated_runtime_minutes: int = Field(..., ge=1)
+    editable: bool
+    scene_density: float | None = Field(default=None, ge=0)
+
+
+class ScriptSchema(BaseModel):
+    project: ProjectMetaSchema
+    source_summary: SourceSummarySchema
+    chapters: list[ChapterSchema] = Field(..., min_length=1)
+    scenes: list[SceneSchema] = Field(..., min_length=1)
+    metadata: ScriptMetadataSchema
+    versions: list[ScriptVersionEntrySchema]
+
+    @model_validator(mode="after")
+    def validate_scene_counts(self) -> "ScriptSchema":
+        if self.metadata.total_scenes != len(self.scenes):
+            raise ValueError("metadata.total_scenes does not match scenes length")
+        if self.project.source_chapter_count != len(self.chapters):
+            raise ValueError("project.source_chapter_count does not match chapters length")
+        return self
+
+
 class UpdateSceneRequest(BaseModel):
-    title: str | None = None
-    slugline: str | None = None
-    purpose: str | None = None
-    beats: list[dict[str, Any]] | None = None
-    adaptation_notes: dict[str, Any] | None = None
-    change_note: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    slugline: str | None = Field(default=None, min_length=1, max_length=120)
+    purpose: str | None = Field(default=None, min_length=1, max_length=300)
+    beats: list[BeatSchema] | None = None
+    adaptation_notes: AdaptationNotesSchema | None = None
+    change_note: str | None = Field(default=None, max_length=200)
 
 
 class RewriteSceneRequest(BaseModel):
-    instruction: str = Field(..., min_length=1)
+    instruction: str = Field(..., min_length=1, max_length=200)
     preserve_core_event: bool = Field(default=True)
     create_new_version: bool = Field(default=True)
 
@@ -39,3 +148,6 @@ class ExportScriptRequest(BaseModel):
     format: str = Field(default="yaml")
     include_report: bool = Field(default=True)
 
+
+def validate_script_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return ScriptSchema.model_validate(payload).model_dump()
