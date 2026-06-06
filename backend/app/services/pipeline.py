@@ -65,6 +65,21 @@ STOP_WORDS = {
     "章节",
 }
 
+CHARACTER_HINT_WORDS = (
+    "说",
+    "问",
+    "答",
+    "喊",
+    "叫",
+    "看着",
+    "看向",
+    "盯着",
+    "望着",
+    "对",
+    "朝",
+    "跟",
+)
+
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -204,21 +219,39 @@ def read_source_text(project: dict[str, Any]) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
+def normalize_text(text: str) -> str:
+    normalized = text.replace("\ufeff", "").replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized.strip()
+
+
+def clean_character_candidate(value: str) -> str:
+    candidate = value.strip()
+    candidate = re.sub(r"(又|也|都|仍|还|正|却)$", "", candidate)
+    return candidate
+
+
 def matches_heading(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
         return False
     patterns = (
         r"^第[0-9一二三四五六七八九十百千]+章.*$",
+        r"^第[0-9一二三四五六七八九十百千]+节.*$",
+        r"^第[0-9一二三四五六七八九十百千]+回.*$",
+        r"^序章.*$",
+        r"^楔子.*$",
         r"^Chapter\s+\d+.*$",
         r"^#\s+.+$",
+        r"^##\s+.+$",
         r"^\d+[.、]\s*.+$",
+        r"^[（(]?[0-9一二三四五六七八九十]+[）)]\s*.+$",
     )
     return any(re.match(pattern, stripped, flags=re.IGNORECASE) for pattern in patterns)
 
 
 def split_chapters(text: str, min_chapter_count: int) -> list[dict[str, Any]]:
-    normalized = text.replace("\r\n", "\n").strip()
+    normalized = normalize_text(text)
     lines = normalized.split("\n")
     chapters: list[dict[str, Any]] = []
     current_title: str | None = None
@@ -226,7 +259,7 @@ def split_chapters(text: str, min_chapter_count: int) -> list[dict[str, Any]]:
 
     def flush() -> None:
         nonlocal current_title, current_lines
-        content = "\n".join(current_lines).strip()
+        content = "\n".join(line for line in current_lines if line.strip()).strip()
         if not content:
             current_title = None
             current_lines = []
@@ -254,7 +287,7 @@ def split_chapters(text: str, min_chapter_count: int) -> list[dict[str, Any]]:
     if len(chapters) >= min_chapter_count:
         return chapters
 
-    paragraphs = [segment.strip() for segment in normalized.split("\n\n") if segment.strip()]
+    paragraphs = [segment.strip() for segment in re.split(r"\n{2,}", normalized) if segment.strip()]
     if len(paragraphs) < min_chapter_count:
         return []
 
@@ -277,24 +310,46 @@ def split_chapters(text: str, min_chapter_count: int) -> list[dict[str, Any]]:
 
 
 def summarize_text(text: str, limit: int = 90) -> str:
-    sentences = [item.strip() for item in re.split(r"(?<=[。！？!?])", text) if item.strip()]
+    cleaned = normalize_text(text)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    sentences = [item.strip() for item in re.split(r"(?<=[。！？!?])", cleaned) if item.strip()]
     if sentences:
         summary = "".join(sentences[:2]).strip()
     else:
-        summary = text.strip()
+        summary = cleaned.strip()
     return summary[:limit]
 
 
 def extract_characters(text: str) -> list[str]:
-    matches = re.findall(r"[\u4e00-\u9fff]{2,3}", text)
+    normalized = normalize_text(text)
     counter = Counter()
-    for match in matches:
+    patterns = [
+        re.compile(rf"([\u4e00-\u9fff]{{2,4}})(?={'|'.join(CHARACTER_HINT_WORDS)})"),
+        re.compile(rf"(?:对|朝|看向|望向)([\u4e00-\u9fff]{{2,4}})"),
+    ]
+
+    for pattern in patterns:
+        for match in pattern.findall(normalized):
+            match = clean_character_candidate(match)
+            if match in STOP_WORDS or any(char.isdigit() for char in match):
+                continue
+            if len(match) < 2:
+                continue
+            counter[match] += 2
+
+    for match in re.findall(r"[\u4e00-\u9fff]{2,4}", normalized):
+        match = clean_character_candidate(match)
         if match in STOP_WORDS:
             continue
         if any(char.isdigit() for char in match):
             continue
+        if len(match) < 2:
+            continue
+        if match.endswith(("起来", "下去", "出来", "进去", "不是", "可以")):
+            continue
         counter[match] += 1
-    names = [name for name, count in counter.most_common(5) if count >= 2]
+
+    names = [name for name, count in counter.most_common(6) if count >= 2]
     return names or ["主角"]
 
 
@@ -318,7 +373,7 @@ def build_chapters(raw_chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def split_paragraphs(text: str) -> list[str]:
-    normalized = text.replace("\r\n", "\n").strip()
+    normalized = normalize_text(text)
     if not normalized:
         return []
     paragraphs = [segment.strip() for segment in re.split(r"\n{2,}", normalized) if segment.strip()]
