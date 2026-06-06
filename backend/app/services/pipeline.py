@@ -560,6 +560,15 @@ def patch_scene(
                     "description": payload.get("change_note") or f"手动编辑 {scene_id}",
                 }
             )
+        current_version = next(
+            (version for version in current["versions"] if version["version_id"] == version_id),
+            None,
+        )
+        if current_version is not None:
+            modified_scenes = current_version.setdefault("modified_scenes", [])
+            if scene_id not in modified_scenes:
+                modified_scenes.append(scene_id)
+            current_version["created_at"] = now_iso()
         current["scripts"][version_id] = script
         current["updated_at"] = now_iso()
         return current

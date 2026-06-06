@@ -27,6 +27,7 @@
             >
               <strong>{{ version.version_name }}</strong>
               <p>{{ version.description }}</p>
+              <p>改动场景：{{ version.modified_scenes?.length || 0 }}</p>
               <span>{{ version.created_at }}</span>
             </button>
           </li>
