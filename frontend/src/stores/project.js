@@ -17,10 +17,33 @@ import {
   uploadSource
 } from "../api/project";
 
+const ACTIVE_PROJECT_STORAGE_KEY = "novel2script.activeProjectId";
+
 function sleep(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+function readStoredProjectId() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || "";
+}
+
+function writeStoredProjectId(projectId) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, projectId);
+}
+
+function removeStoredProjectId() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
 }
 
 async function waitTask(taskId, attempts = 120, interval = 1000) {
@@ -40,7 +63,7 @@ async function waitTask(taskId, attempts = 120, interval = 1000) {
 
 export const useProjectStore = defineStore("project", {
   state: () => ({
-    projectId: "",
+    projectId: readStoredProjectId(),
     project: null,
     chapters: [],
     scenes: [],
@@ -58,6 +81,41 @@ export const useProjectStore = defineStore("project", {
     }
   },
   actions: {
+    setActiveProject(projectId) {
+      this.projectId = projectId;
+      if (projectId) {
+        writeStoredProjectId(projectId);
+      } else {
+        removeStoredProjectId();
+      }
+    },
+    clearProjectState() {
+      this.setActiveProject("");
+      this.project = null;
+      this.chapters = [];
+      this.scenes = [];
+      this.selectedSceneId = "";
+      this.selectedScene = null;
+      this.script = null;
+      this.versions = [];
+      this.exportResult = null;
+    },
+    async hydrateProject() {
+      if (!this.projectId || this.project) {
+        return;
+      }
+      this.loading = true;
+      this.message = "正在加载项目";
+      try {
+        await this.refreshAll();
+        this.message = "项目已恢复";
+      } catch (_) {
+        this.clearProjectState();
+        this.message = "";
+      } finally {
+        this.loading = false;
+      }
+    },
     async bootstrapProject(title, file) {
       this.loading = true;
       this.message = "正在创建项目";
@@ -66,7 +124,7 @@ export const useProjectStore = defineStore("project", {
           title,
           language: "zh-CN"
         });
-        this.projectId = projectResponse.data.project_id;
+        this.setActiveProject(projectResponse.data.project_id);
         this.project = {
           project_id: projectResponse.data.project_id,
           title: projectResponse.data.title,

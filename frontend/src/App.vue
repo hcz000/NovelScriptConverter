@@ -22,5 +22,14 @@
 </template>
 
 <script setup>
+import { onMounted } from "vue";
 import { RouterLink, RouterView } from "vue-router";
+
+import { useProjectStore } from "./stores/project";
+
+const store = useProjectStore();
+
+onMounted(() => {
+  store.hydrateProject();
+});
 </script>
