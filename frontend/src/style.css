@@ -410,6 +410,13 @@ select {
   color: var(--muted);
 }
 
+.quality-score small {
+  display: block;
+  margin-top: 4px;
+  color: var(--accent-dark);
+  font-size: 12px;
+}
+
 .quality-headline {
   margin: 0;
   line-height: 1.6;

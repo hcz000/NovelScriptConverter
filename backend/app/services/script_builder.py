@@ -357,7 +357,7 @@ def build_script(project: dict[str, Any], chapters: list[dict[str, Any]]) -> dic
         "character_relations": build_character_relations(chapters),
         "scene_plan": scene_plan,
     }
-    return attach_quality_report(script)
+    return attach_quality_report(script, use_llm=False)
 
 
 def build_llm_generation_payload(project: dict[str, Any], chapters: list[dict[str, Any]], draft: dict[str, Any]) -> dict[str, Any]:

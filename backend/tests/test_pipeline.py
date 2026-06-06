@@ -2,6 +2,7 @@ from app.schemas import validate_script_payload
 from app.services.llm_provider import llm_enabled
 from app.services.pipeline import (
     apply_rewrite_instruction,
+    attach_quality_report,
     build_chapters,
     build_script,
     extract_characters,
@@ -86,6 +87,87 @@ def test_build_script_includes_character_relations() -> None:
     validated = validate_script_payload(script)
 
     assert validated["character_relations"]
+
+
+def test_attach_quality_report_uses_valid_llm_review(monkeypatch) -> None:
+    raw = [
+        {
+            "title": "第一章 入门",
+            "text": (
+                "林凡走进考场，苏青在旁观察。\n\n"
+                "测试官宣布失败就会失去资格。\n\n"
+                "“你确定还要继续？”测试官问。\n\n"
+                "林凡没有后退，石碑忽然亮起。"
+            ),
+        }
+    ]
+    chapters = build_chapters(raw)
+    script = build_script({"title": "测试项目", "language": "zh-CN"}, chapters)
+    scene_id = script["scenes"][0]["scene_id"]
+
+    def fake_request_json_object(_system_prompt, _user_prompt):
+        return {
+            "overall_score": 91,
+            "headline": "冲突入口清楚，已经具备比赛展示的场景化卖点。",
+            "pitch_highlights": ["主角选择、失败代价和尾部异象形成清晰钩子。"],
+            "metrics": [
+                {
+                    "name": "比赛展示亮点",
+                    "score": 94,
+                    "rationale": "场景能快速说明系统从小说段落提炼冲突、转折和可拍动作的能力。",
+                }
+            ],
+            "scene_notes": [
+                {
+                    "scene_id": scene_id,
+                    "score": 92,
+                    "strengths": ["测试官施压和石碑亮起构成明确转折。"],
+                    "risks": ["苏青的观察还可以承载更多关系信息。"],
+                    "suggestions": ["补一句苏青的反应，让人物关系更外显。"],
+                },
+                {
+                    "scene_id": "SC999",
+                    "score": 100,
+                    "strengths": ["无效场景不应进入结果。"],
+                    "risks": [],
+                    "suggestions": [],
+                },
+            ],
+            "revision_priorities": ["优先让旁观角色参与压力升级。"],
+            "generated_by": "llm",
+        }
+
+    monkeypatch.setattr("app.services.quality_report.request_json_object", fake_request_json_object)
+
+    reviewed = validate_script_payload(attach_quality_report(script))
+
+    assert reviewed["quality_report"]["generated_by"] == "llm"
+    assert reviewed["quality_report"]["overall_score"] == 91
+    assert reviewed["quality_report"]["metrics"][0]["name"] == "比赛展示亮点"
+    assert {note["scene_id"] for note in reviewed["quality_report"]["scene_notes"]} == {
+        scene["scene_id"] for scene in reviewed["scenes"]
+    }
+
+
+def test_attach_quality_report_falls_back_when_llm_review_fails(monkeypatch) -> None:
+    raw = [
+        {
+            "title": "第一章 入门",
+            "text": "林凡走进考场，苏青在旁观察。测试官冷冷看着他，气氛越来越紧。",
+        }
+    ]
+    chapters = build_chapters(raw)
+    script = build_script({"title": "测试项目", "language": "zh-CN"}, chapters)
+
+    def broken_request_json_object(_system_prompt, _user_prompt):
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr("app.services.quality_report.request_json_object", broken_request_json_object)
+
+    reviewed = validate_script_payload(attach_quality_report(script))
+
+    assert reviewed["quality_report"]["generated_by"] == "rule"
+    assert reviewed["quality_report"]["overall_score"] > 0
 
 
 def test_apply_rewrite_instruction_updates_scene_notes() -> None:

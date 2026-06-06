@@ -19,10 +19,10 @@ Implemented today:
 - Chapter splitting for multi-chapter source text
 - Basic summary and character extraction
 - Scene-oriented script draft generation
-- Script quality report with scoring, pitch highlights, and revision priorities
+- Script quality report with scoring, pitch highlights, revision priorities, and optional LLM script review
 - Scene editing in the workspace
 - Instruction-based scene rewrite flow
-- Optional OpenAI-backed LLM generation and rewrite with rule-based fallback
+- Optional OpenAI-backed LLM generation, rewrite, and script quality review with rule-based fallback
 - Version tracking
 - Scene-level version comparison
 - YAML / JSON export
@@ -31,7 +31,7 @@ Implemented today:
 
 Important constraints:
 
-- LLM generation and rewrite require `LLM_PROVIDER=openai` and `OPENAI_API_KEY`; otherwise the backend falls back to deterministic prototype rules
+- LLM generation, rewrite, and script review require `LLM_PROVIDER=openai` and `OPENAI_API_KEY`; otherwise the backend falls back to deterministic prototype rules
 - Data is stored in SQLite under `backend/data/studio.sqlite3`
 - Tasks run through FastAPI `BackgroundTasks`
 - The frontend polls task state instead of using streaming or websockets
@@ -85,7 +85,7 @@ pytest -q --basetemp .test-tmp -p no:cacheprovider
 
 The following are not done yet:
 
-- Strong production-grade LLM prompt orchestration and quality evaluation
+- Production-grade LLM prompt orchestration, cost controls, and review observability
 - Rich plot graph / conflict graph modeling
 - Strong fidelity evaluation
 - Authentication and multi-user support

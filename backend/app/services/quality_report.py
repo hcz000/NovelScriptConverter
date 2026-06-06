@@ -1,11 +1,241 @@
 from __future__ import annotations
 
+import json
 from statistics import mean
 from typing import Any
+
+from app.services.llm_provider import request_json_object
+
+
+QUALITY_REVIEW_SYSTEM_PROMPT = """
+你是一名资深剧本审稿人，正在为小说转短剧/微短剧改编项目做比赛展示级审稿。
+只返回 JSON 对象，不要 Markdown，不要解释。
+评分要关注：戏剧冲突、角色动机、可拍性、对白表现、节奏钩子、原文覆盖、比赛展示亮点。
+输出必须符合：
+{
+  "overall_score": 0-100,
+  "headline": "120字以内的中文总评",
+  "pitch_highlights": ["最多6条，每条说明适合比赛展示的亮点"],
+  "metrics": [{"name": "50字以内", "score": 0-100, "rationale": "200字以内"}],
+  "scene_notes": [{"scene_id": "SC001", "score": 0-100, "strengths": [], "risks": [], "suggestions": []}],
+  "revision_priorities": ["最多6条，按收益排序"],
+  "generated_by": "llm"
+}
+scene_notes 只能使用输入中存在的 scene_id。
+""".strip()
 
 
 def clamp_score(value: float) -> int:
     return max(0, min(100, round(value)))
+
+
+def trim_text(value: Any, max_length: int, fallback: str = "") -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    return text[:max_length]
+
+
+def normalize_string_list(value: Any, max_items: int, max_length: int, fallback: list[str]) -> list[str]:
+    fallback_items = fallback if isinstance(fallback, list) else []
+    if not isinstance(value, list):
+        return fallback_items[:max_items]
+    items = [trim_text(item, max_length) for item in value]
+    items = [item for item in items if item]
+    return (items or fallback_items)[:max_items]
+
+
+def compact_scene_for_review(scene: dict[str, Any]) -> dict[str, Any]:
+    structure = scene.get("dramatic_structure", {})
+    return {
+        "scene_id": scene.get("scene_id"),
+        "title": trim_text(scene.get("title"), 80),
+        "slugline": trim_text(scene.get("slugline"), 80),
+        "purpose": trim_text(scene.get("purpose"), 180),
+        "characters": scene.get("characters", [])[:6],
+        "dramatic_structure": {
+            "objective": trim_text(structure.get("objective"), 160),
+            "obstacle": trim_text(structure.get("obstacle"), 160),
+            "stakes": trim_text(structure.get("stakes"), 160),
+            "turning_point": trim_text(structure.get("turning_point"), 160),
+            "emotion_curve": structure.get("emotion_curve", [])[:6],
+        },
+        "beats": [
+            {
+                "type": beat.get("type"),
+                "character": beat.get("character"),
+                "content": trim_text(beat.get("content"), 120),
+            }
+            for beat in scene.get("beats", [])[:8]
+        ],
+        "source_refs": [
+            {
+                "chapter_id": ref.get("chapter_id"),
+                "excerpt_summary": trim_text(ref.get("excerpt_summary"), 120),
+            }
+            for ref in scene.get("source_refs", [])[:3]
+        ],
+    }
+
+
+def build_llm_review_payload(script: dict[str, Any], rule_report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "project": script.get("project", {}),
+        "source_summary": script.get("source_summary", {}),
+        "metadata": script.get("metadata", {}),
+        "character_relations": script.get("character_relations", [])[:12],
+        "scene_plan": script.get("scene_plan", [])[:24],
+        "scenes": [compact_scene_for_review(scene) for scene in script.get("scenes", [])[:24]],
+        "rule_report_reference": {
+            "overall_score": rule_report.get("overall_score"),
+            "metrics": rule_report.get("metrics", []),
+            "revision_priorities": rule_report.get("revision_priorities", []),
+        },
+    }
+
+
+def normalize_metric(value: Any, fallback: dict[str, Any]) -> dict[str, Any]:
+    value = value if isinstance(value, dict) else {}
+    score = value.get("score", fallback.get("score", 0))
+    try:
+        score_value = float(score)
+    except (TypeError, ValueError):
+        score_value = fallback.get("score", 0)
+    name = trim_text(value.get("name"), 50, trim_text(fallback.get("name"), 50, "综合表现"))
+    return {
+        "name": name,
+        "score": clamp_score(score_value),
+        "rationale": trim_text(
+            value.get("rationale"),
+            200,
+            trim_text(fallback.get("rationale"), 200, metric_rationale(name, clamp_score(score_value))),
+        ),
+    }
+
+
+def normalize_scene_note(
+    value: Any,
+    fallback: dict[str, Any],
+    valid_scene_ids: set[str],
+) -> dict[str, Any] | None:
+    value = value if isinstance(value, dict) else {}
+    scene_id = trim_text(value.get("scene_id"), 20, trim_text(fallback.get("scene_id"), 20))
+    if scene_id not in valid_scene_ids:
+        return None
+
+    score = value.get("score", fallback.get("score", 0))
+    try:
+        score_value = float(score)
+    except (TypeError, ValueError):
+        score_value = fallback.get("score", 0)
+
+    return {
+        "scene_id": scene_id,
+        "score": clamp_score(score_value),
+        "strengths": normalize_string_list(value.get("strengths"), 4, 120, fallback.get("strengths", [])),
+        "risks": normalize_string_list(value.get("risks"), 4, 120, fallback.get("risks", [])),
+        "suggestions": normalize_string_list(value.get("suggestions"), 4, 120, fallback.get("suggestions", [])),
+    }
+
+
+def normalize_llm_quality_report(
+    result: dict[str, Any],
+    fallback_report: dict[str, Any],
+    script: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not isinstance(result, dict):
+        return None
+
+    valid_scene_ids = {scene.get("scene_id") for scene in script.get("scenes", []) if scene.get("scene_id")}
+    fallback_metrics = fallback_report.get("metrics", [])
+    raw_metrics = result.get("metrics")
+    if not isinstance(raw_metrics, list):
+        raw_metrics = []
+    metrics = [
+        normalize_metric(metric, fallback_metrics[index] if index < len(fallback_metrics) else {})
+        for index, metric in enumerate(raw_metrics[:8])
+    ]
+    metric_names = {metric["name"] for metric in metrics}
+    for fallback_metric in fallback_metrics:
+        fallback_name = trim_text(fallback_metric.get("name"), 50) if isinstance(fallback_metric, dict) else ""
+        if len(metrics) >= 8:
+            break
+        if fallback_name and fallback_name not in metric_names:
+            metrics.append(normalize_metric(fallback_metric, fallback_metric))
+            metric_names.add(fallback_name)
+    if not metrics:
+        metrics = [normalize_metric(metric, metric) for metric in fallback_metrics[:8]]
+    if not metrics:
+        return None
+
+    fallback_notes_by_id = {
+        note.get("scene_id"): note
+        for note in fallback_report.get("scene_notes", [])
+        if note.get("scene_id")
+    }
+    raw_notes = result.get("scene_notes")
+    if not isinstance(raw_notes, list):
+        raw_notes = []
+    scene_notes: list[dict[str, Any]] = []
+    seen_scene_ids: set[str] = set()
+    for raw_note in raw_notes:
+        fallback = fallback_notes_by_id.get(raw_note.get("scene_id")) if isinstance(raw_note, dict) else None
+        note = normalize_scene_note(raw_note, fallback or {}, valid_scene_ids)
+        if note and note["scene_id"] not in seen_scene_ids:
+            scene_notes.append(note)
+            seen_scene_ids.add(note["scene_id"])
+
+    for fallback_note in fallback_report.get("scene_notes", []):
+        note = normalize_scene_note(fallback_note, fallback_note, valid_scene_ids)
+        if note and note["scene_id"] not in seen_scene_ids:
+            scene_notes.append(note)
+            seen_scene_ids.add(note["scene_id"])
+
+    score = result.get("overall_score", fallback_report.get("overall_score", mean(metric["score"] for metric in metrics)))
+    try:
+        overall_score = clamp_score(float(score))
+    except (TypeError, ValueError):
+        overall_score = fallback_report.get("overall_score", clamp_score(mean(metric["score"] for metric in metrics)))
+
+    headline = trim_text(result.get("headline"), 120, trim_text(fallback_report.get("headline"), 120, "已完成剧本审稿。"))
+    pitch_highlights = normalize_string_list(
+        result.get("pitch_highlights"),
+        6,
+        120,
+        fallback_report.get("pitch_highlights", []),
+    )
+    revision_priorities = normalize_string_list(
+        result.get("revision_priorities"),
+        6,
+        160,
+        fallback_report.get("revision_priorities", []),
+    )
+
+    return {
+        "overall_score": overall_score,
+        "headline": headline,
+        "pitch_highlights": pitch_highlights,
+        "metrics": metrics,
+        "scene_notes": scene_notes,
+        "revision_priorities": revision_priorities,
+        "generated_by": "llm",
+    }
+
+
+def llm_review_quality_report(script: dict[str, Any], rule_report: dict[str, Any]) -> dict[str, Any] | None:
+    payload = build_llm_review_payload(script, rule_report)
+    user_prompt = (
+        "请基于下面的剧本结构和规则审稿参考，生成更像专业审稿人的质量报告。"
+        "重点指出比赛展示亮点、真正影响成片效果的问题，以及下一轮最值得改的事项。\n\n"
+        f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+    try:
+        result = request_json_object(QUALITY_REVIEW_SYSTEM_PROMPT, user_prompt)
+    except Exception:
+        return None
+    if not result:
+        return None
+    return normalize_llm_quality_report(result, rule_report, script)
 
 
 def score_dialogue(scene: dict[str, Any]) -> int:
@@ -203,6 +433,8 @@ def build_quality_report(script: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def attach_quality_report(script: dict[str, Any]) -> dict[str, Any]:
-    script["quality_report"] = build_quality_report(script)
+def attach_quality_report(script: dict[str, Any], use_llm: bool = True) -> dict[str, Any]:
+    rule_report = build_quality_report(script)
+    llm_report = llm_review_quality_report(script, rule_report) if use_llm else None
+    script["quality_report"] = llm_report or rule_report
     return script

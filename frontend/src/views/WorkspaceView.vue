@@ -133,7 +133,10 @@
         <div v-if="qualityReport" class="quality-panel">
           <div class="quality-score">
             <strong>{{ qualityReport.overall_score }}</strong>
-            <span>综合评分</span>
+            <span>
+              综合评分
+              <small>{{ qualitySourceLabel }}</small>
+            </span>
           </div>
           <p class="quality-headline">{{ qualityReport.headline }}</p>
 
@@ -216,6 +219,9 @@ const formattedScript = computed(() => {
 });
 
 const qualityReport = computed(() => store.script?.quality_report || null);
+const qualitySourceLabel = computed(() =>
+  qualityReport.value?.generated_by === "llm" ? "LLM 审稿" : "规则审稿"
+);
 
 watch(
   () => store.selectedScene,
