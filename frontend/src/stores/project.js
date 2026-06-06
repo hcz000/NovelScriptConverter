@@ -46,6 +46,15 @@ function removeStoredProjectId() {
   window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
 }
 
+function buildSceneList(script) {
+  return (script?.scenes || []).map((scene) => ({
+    scene_id: scene.scene_id,
+    title: scene.title,
+    purpose: scene.purpose,
+    characters: scene.characters
+  }));
+}
+
 async function waitTask(taskId, attempts = 120, interval = 1000) {
   for (let index = 0; index < attempts; index += 1) {
     const taskResponse = await getTask(taskId);
@@ -67,6 +76,7 @@ export const useProjectStore = defineStore("project", {
     project: null,
     chapters: [],
     scenes: [],
+    selectedVersionId: "",
     selectedSceneId: "",
     selectedScene: null,
     script: null,
@@ -78,6 +88,19 @@ export const useProjectStore = defineStore("project", {
   getters: {
     hasProject(state) {
       return Boolean(state.projectId);
+    },
+    activeVersionId(state) {
+      return state.selectedVersionId || state.project?.current_version_id || "";
+    },
+    activeVersion(state) {
+      const versionId = state.selectedVersionId || state.project?.current_version_id;
+      return state.versions.find((version) => version.version_id === versionId) || null;
+    },
+    isViewingCurrentVersion(state) {
+      if (!state.project) {
+        return false;
+      }
+      return !state.selectedVersionId || state.selectedVersionId === state.project.current_version_id;
     }
   },
   actions: {
@@ -94,6 +117,7 @@ export const useProjectStore = defineStore("project", {
       this.project = null;
       this.chapters = [];
       this.scenes = [];
+      this.selectedVersionId = "";
       this.selectedSceneId = "";
       this.selectedScene = null;
       this.script = null;
@@ -125,6 +149,10 @@ export const useProjectStore = defineStore("project", {
           language: "zh-CN"
         });
         this.setActiveProject(projectResponse.data.project_id);
+        this.selectedVersionId = "";
+        this.selectedSceneId = "";
+        this.selectedScene = null;
+        this.exportResult = null;
         this.project = {
           project_id: projectResponse.data.project_id,
           title: projectResponse.data.title,
@@ -155,40 +183,79 @@ export const useProjectStore = defineStore("project", {
         this.loading = false;
       }
     },
+    syncSelectedScene() {
+      if (!this.selectedSceneId || !this.script) {
+        this.selectedScene = null;
+        return;
+      }
+      this.selectedScene =
+        this.script.scenes?.find((scene) => scene.scene_id === this.selectedSceneId) || null;
+    },
     async refreshAll() {
       if (!this.projectId) {
         return;
       }
-      const [projectResponse, chaptersResponse, scriptResponse, scenesResponse, versionsResponse] =
-        await Promise.all([
-          getProject(this.projectId),
-          getChapters(this.projectId),
-          getScript(this.projectId),
-          getScenes(this.projectId),
-          getVersions(this.projectId)
-        ]);
+      const [projectResponse, chaptersResponse, versionsResponse] = await Promise.all([
+        getProject(this.projectId),
+        getChapters(this.projectId),
+        getVersions(this.projectId)
+      ]);
       this.project = projectResponse.data;
       this.chapters = chaptersResponse.data.items;
-      this.script = scriptResponse.data;
-      this.scenes = scenesResponse.data.items;
       this.versions = versionsResponse.data.items;
-      if (!this.selectedSceneId && this.scenes.length > 0) {
-        this.selectedSceneId = this.scenes[0].scene_id;
-        await this.loadScene(this.selectedSceneId);
-      } else if (this.selectedSceneId) {
-        await this.loadScene(this.selectedSceneId);
+
+      const hasSelectedVersion = this.selectedVersionId
+        ? this.versions.some((version) => version.version_id === this.selectedVersionId)
+        : false;
+      const versionId = hasSelectedVersion ? this.selectedVersionId : this.project.current_version_id || "";
+
+      this.selectedVersionId = versionId;
+
+      if (!versionId) {
+        this.script = null;
+        this.scenes = [];
+        this.selectedSceneId = "";
+        this.selectedScene = null;
+        return;
       }
+
+      const scriptResponse = await getScript(this.projectId, versionId);
+      this.script = scriptResponse.data;
+      this.scenes = buildSceneList(this.script);
+
+      if (
+        this.scenes.length > 0 &&
+        (!this.selectedSceneId || !this.scenes.some((scene) => scene.scene_id === this.selectedSceneId))
+      ) {
+        this.selectedSceneId = this.scenes[0].scene_id;
+      }
+
+      if (!this.scenes.length) {
+        this.selectedSceneId = "";
+      }
+
+      this.syncSelectedScene();
+    },
+    async selectVersion(versionId) {
+      if (!this.projectId) {
+        return;
+      }
+      this.selectedVersionId = versionId;
+      this.selectedSceneId = "";
+      this.exportResult = null;
+      await this.refreshAll();
     },
     async loadScene(sceneId) {
-      if (!this.projectId || !sceneId) {
+      if (!sceneId) {
+        this.selectedSceneId = "";
+        this.selectedScene = null;
         return;
       }
       this.selectedSceneId = sceneId;
-      const response = await getScene(this.projectId, sceneId);
-      this.selectedScene = response.data;
+      this.syncSelectedScene();
     },
     async saveScene(payload) {
-      if (!this.projectId || !this.selectedSceneId) {
+      if (!this.projectId || !this.selectedSceneId || !this.isViewingCurrentVersion) {
         return;
       }
       this.loading = true;
@@ -212,7 +279,8 @@ export const useProjectStore = defineStore("project", {
           preserve_core_event: true,
           create_new_version: true
         });
-        await waitTask(response.data.task_id);
+        const task = await waitTask(response.data.task_id);
+        this.selectedVersionId = task.result?.current_version_id || "";
         await this.refreshAll();
       } finally {
         this.loading = false;
@@ -226,6 +294,7 @@ export const useProjectStore = defineStore("project", {
       this.message = "正在导出";
       try {
         const response = await exportScript(this.projectId, {
+          version_id: this.activeVersionId || undefined,
           format,
           include_report: true
         });

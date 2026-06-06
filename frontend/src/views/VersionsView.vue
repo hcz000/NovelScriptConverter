@@ -20,13 +20,28 @@
         </div>
         <ul class="version-list">
           <li v-for="version in store.versions" :key="version.version_id">
-            <strong>{{ version.version_name }}</strong>
-            <p>{{ version.description }}</p>
-            <span>{{ version.created_at }}</span>
+            <button
+              class="scene-item"
+              :class="{ selected: store.activeVersionId === version.version_id }"
+              @click="selectVersion(version.version_id)"
+            >
+              <strong>{{ version.version_name }}</strong>
+              <p>{{ version.description }}</p>
+              <span>{{ version.created_at }}</span>
+            </button>
           </li>
         </ul>
       </article>
       <article class="card">
+        <h3>当前查看</h3>
+        <p v-if="store.activeVersion">
+          版本：{{ store.activeVersion.version_name }}
+        </p>
+        <p v-if="store.activeVersion">
+          说明：{{ store.activeVersion.description }}
+        </p>
+        <p v-if="!store.activeVersion">尚未选择版本</p>
+
         <h3>章节概览</h3>
         <ul class="version-list">
           <li v-for="chapter in store.chapters" :key="chapter.chapter_id">
@@ -44,4 +59,8 @@ import StatusBanner from "../components/StatusBanner.vue";
 import { useProjectStore } from "../stores/project";
 
 const store = useProjectStore();
+
+async function selectVersion(versionId) {
+  await store.selectVersion(versionId);
+}
 </script>

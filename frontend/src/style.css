@@ -140,6 +140,12 @@ textarea {
   color: var(--muted);
 }
 
+.muted-text {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .field input,
 .field textarea {
   width: 100%;
