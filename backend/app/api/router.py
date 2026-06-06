@@ -308,8 +308,10 @@ def create_router(store: DataStore) -> APIRouter:
     def download_file(file_name: str) -> FileResponse:
         from app.core.config import EXPORTS_DIR
 
-        file_path = EXPORTS_DIR / file_name
-        if not file_path.exists():
+        exports_dir = EXPORTS_DIR.resolve()
+        file_path = (exports_dir / file_name).resolve()
+
+        if exports_dir not in file_path.parents or not file_path.is_file():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=make_error_response(40405, "file not found"),
@@ -317,4 +319,3 @@ def create_router(store: DataStore) -> APIRouter:
         return FileResponse(path=file_path, filename=file_name)
 
     return router
-
