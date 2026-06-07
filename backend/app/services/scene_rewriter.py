@@ -1,3 +1,4 @@
+"""场景重写服务：根据用户的改写指令对场景内容进行规则化或 LLM 驱动的改写。"""
 from __future__ import annotations
 
 import json
@@ -9,6 +10,9 @@ from app.services.text_analysis import summarize_text
 
 
 def build_rewrite_profile(instruction: str) -> dict[str, bool]:
+    """解析重写指令字符串，生成改写配置概要。
+    识别四种核心改写维度：压缩节奏、增强冲突、扩展情绪、突出反转。
+    """
     normalized = instruction.strip()
     return {
         "compress_pacing": any(keyword in normalized for keyword in ("压缩", "更快", "短剧", "节奏")),
@@ -43,6 +47,9 @@ def rewrite_dialogue_content(content: str, profile: dict[str, bool]) -> str:
 
 
 def apply_rewrite_instruction(scene: dict[str, Any], instruction: str) -> None:
+    """应用改写指令到场景（规则引擎模式）。
+    原地修改场景的 beats、purpose、dramatic_structure 和 adaptation_notes。
+    """
     profile = build_rewrite_profile(instruction)
     rewritten_beats: list[dict[str, Any]] = []
 
@@ -104,6 +111,10 @@ def apply_rewrite_instruction(scene: dict[str, Any], instruction: str) -> None:
 
 
 def llm_rewrite_scene(scene: dict[str, Any], instruction: str) -> dict[str, Any] | None:
+    """使用 LLM 重写场景（大模型模式）。
+    返回包含 purpose、dramatic_structure、beats、adaptation_notes 的 dict，
+    如果 LLM 不可用或失败返回 None。
+    """
     payload = {
         "title": scene["title"],
         "purpose": scene["purpose"],

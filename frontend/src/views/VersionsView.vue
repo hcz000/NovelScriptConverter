@@ -102,6 +102,7 @@
   </section>
 </template>
 
+<!-- 版本记录页面：展示版本列表、章节概览和版本差异对比 -->
 <script setup>
 import { computed, ref, watch } from "vue";
 
@@ -109,17 +110,20 @@ import StatusBanner from "../components/StatusBanner.vue";
 import { useProjectStore } from "../stores/project";
 
 const store = useProjectStore();
-const baseVersionId = ref("");
-const targetVersionId = ref("");
+const baseVersionId = ref("");     // 基准版本 ID（对比用）
+const targetVersionId = ref("");   // 目标版本 ID（对比用）
 
+/** 是否可以进行对比：两个版本都已选择且不同 */
 const canCompare = computed(
   () => baseVersionId.value && targetVersionId.value && baseVersionId.value !== targetVersionId.value
 );
 
+/** 过滤出有变化的场景（排除 unchanged 状态） */
 const changedScenes = computed(() =>
   (store.versionCompare?.scenes || []).filter((scene) => scene.status !== "unchanged")
 );
 
+/** 监听版本列表变化，自动填充默认对比版本 */
 watch(
   () => store.versions,
   (versions) => {
@@ -138,14 +142,17 @@ watch(
   { immediate: true }
 );
 
+/** 选择版本并刷新项目数据 */
 async function selectVersion(versionId) {
   await store.selectVersion(versionId);
 }
 
+/** 执行版本对比 */
 async function compareVersions() {
   await store.compareVersionPair(baseVersionId.value, targetVersionId.value);
 }
 
+/** 状态码转中文标签 */
 function statusLabel(status) {
   return {
     added: "新增",

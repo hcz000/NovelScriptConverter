@@ -1,1 +1,1 @@
-# API package for route wiring.
+# API 路由包初始化文件。

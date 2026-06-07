@@ -38,6 +38,18 @@
       <section class="card panel editor-panel">
         <div class="panel-header">
           <h3>场景编辑</h3>
+          <div class="header-rewrite">
+            <input
+              v-model="rewriteInstruction"
+              class="rewrite-input"
+              placeholder="重写指令，如：增强冲突张力"
+              :disabled="!store.isViewingCurrentVersion"
+              @keyup.enter="handleRewrite"
+            />
+            <button class="ghost-button" :disabled="!store.isViewingCurrentVersion" @click="handleRewrite">
+              AI 重写
+            </button>
+          </div>
           <button
             class="primary-button"
             :disabled="!store.selectedScene || !store.isViewingCurrentVersion"
@@ -51,6 +63,7 @@
         </p>
 
         <div v-if="store.selectedScene" class="editor-form">
+
           <label class="field">
             <span>标题</span>
             <input v-model="form.title" :disabled="!store.isViewingCurrentVersion" />
@@ -106,18 +119,6 @@
             </div>
           </section>
 
-          <label class="field">
-            <span>重写指令</span>
-            <textarea
-              v-model="rewriteInstruction"
-              rows="4"
-              placeholder="增强冲突张力，压缩节奏"
-              :disabled="!store.isViewingCurrentVersion"
-            />
-          </label>
-          <button class="ghost-button" :disabled="!store.isViewingCurrentVersion" @click="handleRewrite">
-            执行 AI 重写
-          </button>
         </div>
 
         <div v-else class="empty-state">
@@ -138,6 +139,8 @@
               <small>{{ qualitySourceLabel }}</small>
             </span>
           </div>
+          <p class="quality-headline">{{ generationLabel }}</p>
+          <p v-if="llmFallbackReason" class="muted-text">{{ llmFallbackReason }}</p>
           <p class="quality-headline">{{ qualityReport.headline }}</p>
 
           <section>
@@ -187,6 +190,7 @@
   </section>
 </template>
 
+<!-- 剧本工作台页面：核心编辑界面，包含场景列表、编辑器、质量报告和 YAML 预览 -->
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
 
@@ -195,14 +199,15 @@ import { useProjectStore } from "../stores/project";
 import { toYaml } from "../utils/yaml";
 
 const store = useProjectStore();
-const rewriteInstruction = ref("");
-const form = reactive({
+const rewriteInstruction = ref("");       // 重写指令输入
+const form = reactive({                   // 编辑表单（与当前选中场景同步）
   title: "",
   slugline: "",
   purpose: "",
   beats: []
 });
 
+/** 创建一个空节拍（默认类型为 action） */
 function createEmptyBeat(type = "action") {
   return {
     type,
@@ -211,18 +216,74 @@ function createEmptyBeat(type = "action") {
   };
 }
 
+/** 将剧本数据格式化为 YAML 字符串（用于预览） */
 const formattedScript = computed(() => {
   if (!store.script) {
     return "暂无剧本数据";
   }
-  return toYaml(store.script);
+  return toYaml(readableScript.value);
 });
 
+/** 当前剧本的质量报告 */
 const qualityReport = computed(() => store.script?.quality_report || null);
+/** 质量报告的来源标签（LLM 审稿 或 规则审稿） */
 const qualitySourceLabel = computed(() =>
   qualityReport.value?.generated_by === "llm" ? "LLM 审稿" : "规则审稿"
 );
+const generationSource = computed(() => store.script?.metadata?.generation_source || "unknown");
+const generationLabel = computed(() =>
+  generationSource.value === "llm" ? "生成：LLM 增强" : "生成：规则引擎"
+);
+const llmFallbackReason = computed(() => {
+  const reason = store.script?.metadata?.llm_fallback_reason;
+  return reason ? `LLM 未参与生成：${reason}` : "";
+});
+const readableScript = computed(() => {
+  const script = store.script;
+  if (!script) return {};
+  const metadata = script.metadata || {};
+  const sourceSummary = script.source_summary || {};
+  return {
+    title: script.project?.title,
+    version: script.project?.version,
+    created_at: script.project?.created_at,
+    generation_source: metadata.generation_source || "unknown",
+    llm_status: metadata.llm_status || null,
+    llm_fallback_reason: metadata.llm_fallback_reason || null,
+    premise: sourceSummary.premise,
+    main_conflict: sourceSummary.main_conflict,
+    main_characters: (sourceSummary.main_characters || []).map(
+      (profile) => `${profile.name}（${profile.role}）`
+    ),
+    scene_count: script.scenes?.length || 0,
+    scenes: (script.scenes || []).map((scene) => ({
+      scene_id: scene.scene_id,
+      title: scene.title,
+      heading: scene.slugline,
+      purpose: scene.purpose,
+      characters: scene.characters || [],
+      dramatic_notes: {
+        objective: scene.dramatic_structure?.objective,
+        obstacle: scene.dramatic_structure?.obstacle,
+        turning_point: scene.dramatic_structure?.turning_point
+      },
+      beats: (scene.beats || []).map((beat) =>
+        beat.type === "dialogue"
+          ? `${beat.character || "未标明"}：${beat.content}`
+          : `动作：${beat.content}`
+      )
+    })),
+    quality_report: qualityReport.value
+      ? {
+          overall_score: qualityReport.value.overall_score,
+          headline: qualityReport.value.headline,
+          revision_priorities: qualityReport.value.revision_priorities || []
+        }
+      : null
+  };
+});
 
+/** 监听选中场景变化，同步更新编辑表单数据 */
 watch(
   () => store.selectedScene,
   (scene) => {
@@ -248,18 +309,22 @@ watch(
   }
 );
 
+/** 选择场景并加载详情 */
 async function selectScene(sceneId) {
   await store.loadScene(sceneId);
 }
 
+/** 在节拍列表中添加一个新节拍 */
 function addBeat() {
   form.beats.push(createEmptyBeat());
 }
 
+/** 删除指定索引的节拍 */
 function removeBeat(index) {
   form.beats.splice(index, 1);
 }
 
+/** 规范化节拍数据：去除空字符，对白类型保留 character 字段 */
 function normalizeBeats() {
   return form.beats.map((beat) => ({
     type: beat.type,
@@ -268,6 +333,7 @@ function normalizeBeats() {
   }));
 }
 
+/** 保存场景编辑内容 */
 async function saveScene() {
   try {
     await store.saveScene({
@@ -282,6 +348,7 @@ async function saveScene() {
   }
 }
 
+/** 执行 AI 重写 */
 async function handleRewrite() {
   if (!rewriteInstruction.value.trim()) {
     window.alert("请输入重写指令");

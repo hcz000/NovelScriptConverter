@@ -1,3 +1,4 @@
+"""质量审稿报告：基于规则引擎和 LLM 生成剧本质量评估报告。"""
 from __future__ import annotations
 
 import json
@@ -6,7 +7,7 @@ from typing import Any
 
 from app.services.llm_provider import request_json_object
 
-
+# LLM 审稿系统提示词：定义审稿人的角色、评分维度和输出格式
 QUALITY_REVIEW_SYSTEM_PROMPT = """
 你是一名资深剧本审稿人，正在为小说转短剧/微短剧改编项目做比赛展示级审稿。
 只返回 JSON 对象，不要 Markdown，不要解释。
@@ -26,6 +27,7 @@ scene_notes 只能使用输入中存在的 scene_id。
 
 
 def clamp_score(value: float) -> int:
+    """将分数限制在 0-100 范围内。"""
     return max(0, min(100, round(value)))
 
 
@@ -143,6 +145,7 @@ def normalize_llm_quality_report(
     fallback_report: dict[str, Any],
     script: dict[str, Any],
 ) -> dict[str, Any] | None:
+    """规范化 LLM 返回的质量报告：清洗字段、校验 scene_id 有效性、用规则报告补全缺失项。"""
     if not isinstance(result, dict):
         return None
 
@@ -362,6 +365,10 @@ def metric_rationale(name: str, score: int) -> str:
 
 
 def build_quality_report(script: dict[str, Any]) -> dict[str, Any]:
+    """基于规则引擎生成质量报告。
+    计算每个场景的五个维度评分（戏剧冲突、角色动机、可拍性、对白表现、节奏钩子），
+    汇总为综合评分、亮点和改进优先级列表。
+    """
     scenes = script.get("scenes", [])
     if not scenes:
         return {
@@ -434,6 +441,7 @@ def build_quality_report(script: dict[str, Any]) -> dict[str, Any]:
 
 
 def attach_quality_report(script: dict[str, Any], use_llm: bool = True) -> dict[str, Any]:
+    """为剧本附加质量报告。优先使用 LLM 报告，降级使用规则报告。"""
     rule_report = build_quality_report(script)
     llm_report = llm_review_quality_report(script, rule_report) if use_llm else None
     script["quality_report"] = llm_report or rule_report

@@ -1,3 +1,6 @@
+"""服务层单元测试：测试文本分析、章节构建、剧本生成、场景重写、质量报告等功能。"""
+from copy import deepcopy
+
 from app.schemas import validate_script_payload
 from app.services.llm_provider import llm_enabled
 from app.services.pipeline import (
@@ -5,8 +8,11 @@ from app.services.pipeline import (
     attach_quality_report,
     build_chapters,
     build_script,
+    dump_script_content,
     extract_characters,
+    extract_dialogue_fragments,
     generate_project_script,
+    llm_generate_script,
     matches_heading,
     split_chapters,
 )
@@ -36,6 +42,28 @@ def test_extract_characters_prefers_name_candidates() -> None:
     text = "林凡看着苏青，苏青却没有回头。林凡又喊了赵岩，赵岩仍旧沉默。"
     characters = extract_characters(text)
     assert "林凡" in characters
+
+
+def test_unattributed_dialogue_is_not_forced_onto_primary_character() -> None:
+    fragments = extract_dialogue_fragments("“你们看，他又失败了。”人群里传来低声议论。", ["林凡"])
+    assert fragments == [{"character": "", "content": "你们看，他又失败了。"}]
+
+    raw = [
+        {
+            "title": "第一章 旁观",
+            "text": "林凡走进广场。\n\n“你们看，他又失败了。”人群里传来低声议论。",
+        }
+    ]
+    chapters = build_chapters(raw)
+    script = build_script({"title": "测试项目", "language": "zh-CN"}, chapters)
+    dialogue_beats = [
+        beat
+        for scene in script["scenes"]
+        for beat in scene["beats"]
+        if beat["type"] == "dialogue"
+    ]
+
+    assert any(beat["character"] == "未标明" for beat in dialogue_beats)
 
 
 def test_build_script_creates_multiple_scenes_and_validates() -> None:
@@ -116,6 +144,29 @@ def test_build_script_adds_stronger_scene_dramatics() -> None:
     )
     assert any("关系" in relation["relationship"] for relation in validated["character_relations"])
     assert "可拍冲突" in validated["source_summary"]["main_conflict"]
+
+
+def test_yaml_export_uses_readable_script_view() -> None:
+    raw = [
+        {
+            "title": "第一章 入门",
+            "text": (
+                "林凡走进考场，苏青在旁观察。\n\n"
+                "“你确定还要继续？”测试官问。\n\n"
+                "林凡没有后退，石碑忽然亮起。"
+            ),
+        }
+    ]
+    chapters = build_chapters(raw)
+    script = build_script({"title": "测试项目", "language": "zh-CN"}, chapters)
+    content = dump_script_content(script, "yaml")
+
+    assert "title:" in content
+    assert "scenes:" in content
+    assert "beats:" in content
+    assert "metadata:" not in content
+    assert "source_refs:" not in content
+    assert "scene_plan:" not in content
 
 
 def test_attach_quality_report_uses_valid_llm_review(monkeypatch) -> None:
@@ -221,6 +272,42 @@ def test_apply_rewrite_instruction_updates_scene_notes() -> None:
 
 def test_llm_provider_disabled_by_default() -> None:
     assert llm_enabled() is False
+
+
+def test_llm_generate_script_repairs_common_schema_drift(monkeypatch) -> None:
+    raw = [
+        {
+            "title": "第一章 入门",
+            "text": "林凡走进考场，苏青在旁观察。测试官冷冷看着他。苏青说道：“你还要继续吗？”",
+        }
+    ]
+    chapters = build_chapters(raw)
+    project = {"title": "测试项目", "language": "zh-CN"}
+    draft = build_script(project, chapters)
+    broken = deepcopy(draft)
+    broken["metadata"]["generation_source"] = "rule-based adaptation"
+    broken["metadata"]["llm_status"] = "fallback_applied"
+    broken["versions"] = [{"version": "v1"}]
+    broken["scenes"][0]["characters"] = ["林凡"]
+    broken["scenes"][0]["beats"].append(
+        {
+            "type": "dialogue",
+            "character": "苏青",
+            "content": "你还要继续吗？",
+        }
+    )
+
+    monkeypatch.setattr("app.services.script_builder.request_json_object", lambda *_args: broken)
+
+    generated = llm_generate_script(project, chapters, draft)
+
+    assert generated is not None
+    assert generated["metadata"]["generation_source"] == "llm"
+    assert generated["metadata"]["llm_status"] is None
+    assert generated["versions"] == []
+    assert "苏青" in generated["scenes"][0]["characters"]
+    assert generated["metadata"]["total_scenes"] == len(generated["scenes"])
+    assert len(generated["scene_plan"]) == len(generated["scenes"])
 
 
 def test_generate_project_script_uses_valid_llm_draft(temp_store, monkeypatch) -> None:

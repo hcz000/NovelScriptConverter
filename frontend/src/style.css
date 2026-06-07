@@ -265,12 +265,20 @@ select {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 360px;
-  gap: 24px;
+  grid-template-columns: 300px minmax(0, 1fr) 540px;
+  gap: 20px;
+  height: calc(100vh - 170px);  /* 占满视口，减去顶部区域 */
 }
 
 .panel {
-  min-height: 640px;
+  height: 100%;                  /* 填满 workspace-grid 行高 */
+  overflow-y: auto;              /* 内容超出时滑动 */
+  scrollbar-width: none;         /* Firefox 隐藏滚动条 */
+  -ms-overflow-style: none;      /* IE 隐藏滚动条 */
+}
+
+.panel::-webkit-scrollbar {
+  display: none;                 /* WebKit 隐藏滚动条 */
 }
 
 .panel-header {
@@ -279,6 +287,31 @@ select {
   align-items: center;
   gap: 12px;
   margin-bottom: 18px;
+}
+
+.header-rewrite {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  max-width: 420px;
+}
+
+.rewrite-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.18s;
+}
+
+.rewrite-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(94, 156, 131, 0.14);
 }
 
 .panel-header h3 {
@@ -426,14 +459,16 @@ select {
 
 .code-block {
   margin: 0;
-  padding: 18px;
+  padding: 16px;
   min-height: 520px;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #26322e;
-  color: #eef6f1;
+  background: var(--surface);
+  color: var(--muted);
   overflow: auto;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", monospace;
 }
 
 .export-box {
@@ -557,6 +592,342 @@ select {
   color: var(--muted);
 }
 
+/* ==================== 导入页 ==================== */
+.import-page {
+  display: grid;
+  gap: 22px;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.import-hero {
+  text-align: center;
+  padding: 28px 0 4px;
+}
+
+.hero-badge {
+  display: inline-block;
+  padding: 5px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 14px;
+}
+
+.import-hero h2 {
+  margin: 0 0 8px;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.hero-desc {
+  margin: 0 auto;
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 工作流步骤条 */
+.workflow-steps {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.workflow-steps .step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.workflow-steps .step-icon {
+  font-size: 16px;
+}
+
+.workflow-steps .step-arrow {
+  color: var(--border-strong);
+  font-size: 18px;
+  font-weight: 300;
+}
+
+/* 主表单区（单栏居中） */
+.import-main {
+  display: grid;
+  gap: 14px;
+}
+
+.import-form-card {
+  padding: 32px 36px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.title-input {
+  font-size: 16px !important;
+  padding: 14px 16px !important;
+}
+
+/* 文件拖拽上传区 */
+.upload-zone {
+  position: relative;
+  margin: 20px 0;
+  padding: 44px 32px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: center;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  cursor: pointer;
+}
+
+.upload-zone:hover,
+.upload-zone--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.upload-zone--has-file {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.upload-placeholder {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.upload-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.upload-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.upload-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.upload-file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.upload-file-info strong {
+  display: block;
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.upload-file-info span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.upload-remove {
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.upload-remove:hover {
+  color: var(--danger);
+  border-color: #edcbc6;
+}
+
+.upload-input-hidden {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-pick-btn {
+  margin-top: 12px;
+  padding: 8px 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.18s, border-color 0.18s;
+}
+
+.file-pick-btn:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+/* 提交按钮 */
+.submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 15px 24px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent-dark);
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(53, 110, 90, 0.3);
+}
+
+.submit-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 加载动画 */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 项目状态条 */
+.project-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.project-status-bar strong {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.project-status-bar .divider {
+  color: var(--border);
+}
+
+.status-text {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.status-action {
+  margin-left: auto;
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-dark);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+
+.status-action:hover {
+  background: var(--accent-soft);
+}
+
+.project-status-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.project-status-dot.init { background: #c0c8c4; }
+.project-status-dot.source_uploaded { background: #a3c4b5; }
+.project-status-dot.parsing,
+.project-status-dot.generating { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.project-status-dot.ready,
+.project-status-dot.script_ready { background: var(--accent-dark); }
+
+.project-status-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* 响应式 */
+@media (max-width: 700px) {
+  .import-page {
+    max-width: 100%;
+  }
+
+  .import-hero h2 {
+    font-size: 26px;
+  }
+
+  .workflow-steps {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .workflow-steps .step-arrow {
+    display: none;
+  }
+}
+
+/* ==================== 原有样式 ==================== */
 .empty-state {
   padding: 48px 24px;
   border: 1px dashed var(--border);

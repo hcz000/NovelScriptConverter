@@ -1,3 +1,4 @@
+"""异步任务编排：实现后台任务的核心逻辑（章节解析、剧本生成、场景编辑/重写、导出等）。"""
 from __future__ import annotations
 
 from typing import Any
@@ -25,6 +26,7 @@ from app.services.common import (
     touch_project,
     update_task,
 )
+from app.services.llm_provider import last_llm_error, llm_status
 from app.services.scene_rewriter import apply_rewrite_instruction, llm_rewrite_scene
 from app.services.script_builder import build_chapters, build_script, llm_generate_script
 from app.services.quality_report import attach_quality_report
@@ -39,6 +41,9 @@ from app.services.text_analysis import split_chapters
 
 
 def parse_project_source(store: DataStore, project_id: str, task_id: str, min_chapter_count: int) -> None:
+    """后台任务：解析上传的源文件。
+    流程：读取文件 → 分割章节 → 构建章节结构 → 更新项目状态为 READY。
+    """
     update_task(store, task_id, status=TASK_RUNNING, progress=10)
     touch_project(store, project_id, status=PROJECT_PARSING)
     project = ensure_project(store, project_id)
@@ -82,6 +87,9 @@ def generate_project_script(
     task_id: str,
     include_report: bool,
 ) -> None:
+    """后台任务：生成剧本。
+    流程：规则引擎构建初稿 → LLM 增强（可选）→ 附加质量报告 → 创建版本记录。
+    """
     update_task(store, task_id, status=TASK_RUNNING, progress=10)
     touch_project(store, project_id, status=PROJECT_GENERATING)
     project = ensure_project(store, project_id)
@@ -97,8 +105,20 @@ def generate_project_script(
         )
         return
 
+    update_task(store, task_id, status=TASK_RUNNING, progress=20, stage="building_rule_draft")
     rule_script = validate_script_or_raise(build_script(project, chapters))
-    script = attach_quality_report(llm_generate_script(project, chapters, rule_script) or rule_script)
+    status_before_generation = llm_status()
+    update_task(store, task_id, status=TASK_RUNNING, progress=35, stage="generating_llm_script")
+    llm_script = llm_generate_script(project, chapters, rule_script)
+    update_task(store, task_id, status=TASK_RUNNING, progress=65, stage="attaching_quality_report")
+    generation_source = "llm" if llm_script else "rule"
+    fallback_reason = None if llm_script else last_llm_error() or status_before_generation.get("reason")
+    script = attach_quality_report(llm_script or rule_script, use_llm=False) if include_report else (llm_script or rule_script)
+    update_task(store, task_id, status=TASK_RUNNING, progress=85, stage="saving_script_version")
+    script.setdefault("metadata", {})["generation_source"] = generation_source
+    script["metadata"]["llm_status"] = status_before_generation
+    if fallback_reason:
+        script["metadata"]["llm_fallback_reason"] = fallback_reason
     version_id = make_id("ver")
     version_name = next_version_name(project.get("versions", []))
     version_record = {
@@ -132,12 +152,17 @@ def generate_project_script(
     result = {
         "current_version_id": version_id,
         "total_scenes": len(script["scenes"]),
+        "generation_source": generation_source,
+        "llm_status": status_before_generation,
     }
+    if fallback_reason:
+        result["llm_fallback_reason"] = fallback_reason
     if include_report:
         result["report"] = {
             "structure_complete": True,
             "scene_count": len(script["scenes"]),
             "chapter_coverage": len(chapters),
+            "generation_source": generation_source,
         }
     update_task(store, task_id, status=TASK_SUCCEEDED, progress=100, result=result)
 
@@ -148,6 +173,7 @@ def patch_scene(
     scene_id: str,
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any], str]:
+    """场景局部编辑：更新场景字段并重新校验、重新计算质量报告。"""
     project = ensure_project(store, project_id)
     version_id, _ = ensure_current_script(project)
 
@@ -205,6 +231,9 @@ def rewrite_scene_task(
     instruction: str,
     create_new_version: bool,
 ) -> None:
+    """后台任务：场景重写。
+    优先使用 LLM 重写，降级使用规则引擎。可选创建新版本分支。
+    """
     update_task(store, task_id, status=TASK_RUNNING, progress=15)
     project = ensure_project(store, project_id)
     source_version_id, current_script = ensure_current_script(project)
@@ -283,6 +312,7 @@ def export_script_task(
     export_format: str,
     include_report: bool,
 ) -> None:
+    """后台任务：导出剧本为 YAML/JSON 文件，返回下载 URL。"""
     update_task(store, task_id, status=TASK_RUNNING, progress=20)
     project = ensure_project(store, project_id)
     active_version_id = version_id or project.get("current_version_id")
@@ -295,7 +325,7 @@ def export_script_task(
             error_message="version not found",
         )
         return
-    script = validate_script_or_raise(attach_quality_report(project["scripts"][active_version_id]))
+    script = validate_script_or_raise(attach_quality_report(project["scripts"][active_version_id], use_llm=False))
     content = dump_script_content(script, export_format)
     suffix = "json" if export_format.lower() == "json" else "yaml"
     file_name = f"{project_id}_{active_version_id}.{suffix}"

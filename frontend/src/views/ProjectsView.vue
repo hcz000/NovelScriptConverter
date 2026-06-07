@@ -36,9 +36,13 @@
             <span>更新：{{ project.updated_at }}</span>
           </button>
           <div class="project-actions">
-            <span v-if="project.archived" class="status-pill">已归档</span>
+            <template v-if="project.archived">
+              <button class="ghost-button" :disabled="store.loading" @click="unarchiveProject(project)">
+                取消归档
+              </button>
+            </template>
             <button
-              v-if="!project.archived"
+              v-else
               class="ghost-button"
               :disabled="store.loading"
               @click="archiveProject(project)"
@@ -55,6 +59,7 @@
   </section>
 </template>
 
+<!-- 项目列表页面：展示所有项目，支持筛选、切换、归档和删除操作 -->
 <script setup>
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
@@ -64,17 +69,20 @@ import { useProjectStore } from "../stores/project";
 
 const router = useRouter();
 const store = useProjectStore();
-const includeArchived = ref(false);
+const includeArchived = ref(false);  // 是否显示已归档项目
 
+/** 加载项目列表 */
 async function loadProjects() {
   await store.loadProjects(includeArchived.value);
 }
 
+/** 打开指定项目并跳转到工作台 */
 async function openProject(projectId) {
   await store.switchProject(projectId);
   await router.push("/workspace");
 }
 
+/** 归档项目（需确认） */
 async function archiveProject(project) {
   if (!window.confirm(`确认归档项目“${project.title}”？`)) {
     return;
@@ -82,6 +90,12 @@ async function archiveProject(project) {
   await store.archiveActiveProject(project.project_id);
 }
 
+/** 取消归档 */
+async function unarchiveProject(project) {
+  await store.unarchiveActiveProject(project.project_id);
+}
+
+/** 删除项目（需确认，不可恢复） */
 async function deleteProject(project) {
   if (!window.confirm(`确认删除项目“${project.title}”？此操作不可恢复。`)) {
     return;
@@ -89,5 +103,6 @@ async function deleteProject(project) {
   await store.deleteActiveProject(project.project_id);
 }
 
+// 组件挂载时自动加载项目列表
 onMounted(loadProjects);
 </script>

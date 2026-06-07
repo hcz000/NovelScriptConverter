@@ -22,6 +22,7 @@
   </div>
 </template>
 
+<!-- 根组件：应用外壳布局，包含左侧导航和主内容区 -->
 <script setup>
 import { onMounted } from "vue";
 import { RouterLink, RouterView } from "vue-router";
@@ -30,6 +31,7 @@ import { useProjectStore } from "./stores/project";
 
 const store = useProjectStore();
 
+// 组件挂载时自动恢复上次项目状态
 onMounted(() => {
   store.hydrateProject();
 });

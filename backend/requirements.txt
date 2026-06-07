@@ -1,8 +1,18 @@
-fastapi==0.136.1
-uvicorn==0.47.0
-pydantic==2.12.2
-python-multipart>=0.0.9
-PyYAML>=6.0.2
-pytest>=8.3.0
-httpx>=0.28.0
-openai>=1.30.0
+# ==================== Python 后端依赖配置 ====================
+# 安装命令：pip install -r requirements.txt
+
+# ----- Web 框架层 -----
+fastapi==0.136.1              # Web API 框架（路由、验证、文档生成）
+uvicorn==0.47.0               # ASGI 服务器（运行 FastAPI 应用）
+pydantic==2.12.2              # 数据校验与序列化（请求/响应模型）
+
+# ----- 工具库 -----
+python-multipart>=0.0.9       # 文件上传解析（multipart/form-data）
+PyYAML>=6.0.2                 # YAML 格式导出（可选，未安装时降级为 JSON）
+
+# ----- 测试工具 -----
+pytest>=8.3.0                 # 单元测试框架
+httpx>=0.28.0                 # HTTP 客户端（用于 FastAPI TestClient 测试）
+
+# ----- AI/LLM -----
+openai>=1.30.0                # OpenAI SDK（可选，未安装时使用规则引擎模式）

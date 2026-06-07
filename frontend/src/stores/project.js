@@ -1,3 +1,6 @@
+/** Pinia 项目状态管理 (useProjectStore)：
+ *  核心 store，管理当前项目、项目列表、场景、版本等数据，
+ *  封装所有 API 调用逻辑，提供高级操作如一键初始化和状态恢复。 */
 import { defineStore } from "pinia";
 
 import {
@@ -5,9 +8,9 @@ import {
   compareVersions,
   createProject,
   deleteProject,
-  exportScript,
   generateScript,
   getChapters,
+  getExportDownloadUrl,
   getProject,
   getScript,
   getTask,
@@ -15,18 +18,22 @@ import {
   listProjects,
   parseProject,
   rewriteScene,
+  unarchiveProject,
   updateScene,
   uploadSource
 } from "../api/project";
 
+/** LocalStorage 键名：持久化当前活跃项目 ID */
 const ACTIVE_PROJECT_STORAGE_KEY = "novel2script.activeProjectId";
 
+/** 延迟工具函数（用于任务轮询等待） */
 function sleep(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
 }
 
+/** 从 LocalStorage 读取上次活跃的项目 ID */
 function readStoredProjectId() {
   if (typeof window === "undefined") {
     return "";
@@ -34,6 +41,7 @@ function readStoredProjectId() {
   return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || "";
 }
 
+/** 将活跃项目 ID 写入 LocalStorage */
 function writeStoredProjectId(projectId) {
   if (typeof window === "undefined") {
     return;
@@ -48,6 +56,7 @@ function removeStoredProjectId() {
   window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
 }
 
+/** 从剧本数据中提取场景摘要列表（用于左侧导航） */
 function buildSceneList(script) {
   return (script?.scenes || []).map((scene) => ({
     scene_id: scene.scene_id,
@@ -61,21 +70,57 @@ function getErrorMessage(error, fallback) {
   return error?.message || fallback;
 }
 
-async function waitTask(taskId, attempts = 120, interval = 1000) {
-  for (let index = 0; index < attempts; index += 1) {
+const TASK_WAIT_OPTIONS = {
+  PARSE_CHAPTERS: { attempts: 180, interval: 1000 },
+  GENERATE_SCRIPT: { attempts: 1200, interval: 1000 },
+  REWRITE_SCENE: { attempts: 600, interval: 1000 },
+  EXPORT_FILE: { attempts: 300, interval: 1000 },
+  default: { attempts: 300, interval: 1000 }
+};
+
+function getTaskWaitOptions(taskType) {
+  return TASK_WAIT_OPTIONS[taskType] || TASK_WAIT_OPTIONS.default;
+}
+
+function formatTaskTimeoutMessage(task) {
+  const taskTypeLabel = {
+    PARSE_CHAPTERS: "章节解析",
+    GENERATE_SCRIPT: "剧本生成",
+    REWRITE_SCENE: "场景重写",
+    EXPORT_FILE: "文件导出"
+  }[task.task_type] || "任务";
+  const progress = task.progress ?? 0;
+  const stage = task.stage ? `，阶段：${task.stage}` : "";
+  return `${taskTypeLabel}仍在运行（${progress}%${stage}），LLM 生成可能需要更久，请稍后刷新或重试。`;
+}
+
+/** 轮询等待异步任务完成；生成类任务会比普通任务等待更久 */
+async function waitTask(taskId, options = {}) {
+  let waitOptions = null;
+  for (let index = 0; index < TASK_WAIT_OPTIONS.GENERATE_SCRIPT.attempts; index += 1) {
     const taskResponse = await getTask(taskId);
     const task = taskResponse.data;
+    if (!waitOptions) {
+      waitOptions = {
+        ...getTaskWaitOptions(task.task_type),
+        ...options
+      };
+    }
     if (task.status === "SUCCEEDED") {
       return task;
     }
     if (task.status === "FAILED") {
       throw new Error(task.error_message || "task failed");
     }
-    await sleep(interval);
+    if (index + 1 >= waitOptions.attempts) {
+      throw new Error(formatTaskTimeoutMessage(task));
+    }
+    await sleep(waitOptions.interval);
   }
-  throw new Error("task polling timeout");
+  throw new Error(`任务仍在运行：${taskId}`);
 }
 
+/** Pinia Store：管理所有项目相关的状态和操作 */
 export const useProjectStore = defineStore("project", {
   state: () => ({
     projectId: readStoredProjectId(),
@@ -96,7 +141,7 @@ export const useProjectStore = defineStore("project", {
   }),
   getters: {
     hasProject(state) {
-      return Boolean(state.projectId);
+      return Boolean(state.project);
     },
     activeVersionId(state) {
       return state.selectedVersionId || state.project?.current_version_id || "";
@@ -153,6 +198,19 @@ export const useProjectStore = defineStore("project", {
       this.exportResult = null;
       await this.refreshAll();
     },
+    async unarchiveActiveProject(projectId) {
+      const targetProjectId = projectId || this.projectId;
+      if (!targetProjectId) return;
+      this.loading = true;
+      this.message = "正在恢复项目";
+      try {
+        await unarchiveProject(targetProjectId);
+        await this.loadProjects(this.showArchivedProjects);
+        this.message = "项目已恢复";
+      } finally {
+        this.loading = false;
+      }
+    },
     async archiveActiveProject(projectId) {
       const targetProjectId = projectId || this.projectId;
       if (!targetProjectId) {
@@ -189,6 +247,7 @@ export const useProjectStore = defineStore("project", {
         this.loading = false;
       }
     },
+    /** 页面刷新后恢复项目状态（从 LocalStorage 读取上次项目 ID 重新加载） */
     async hydrateProject() {
       if (!this.projectId || this.project) {
         return;
@@ -200,11 +259,12 @@ export const useProjectStore = defineStore("project", {
         this.message = "项目已恢复";
       } catch (error) {
         this.clearProjectState();
-        this.message = error?.message ? `项目恢复失败：${error.message}` : "项目恢复失败";
+        this.message = "项目不存在或已被清理，请重新导入小说";
       } finally {
         this.loading = false;
       }
     },
+    /** 一键初始化流程：创建项目 → 上传文件 → 解析章节 → 生成剧本 */
     async bootstrapProject(title, file) {
       this.loading = true;
       this.message = "正在创建项目";
@@ -247,6 +307,12 @@ export const useProjectStore = defineStore("project", {
         await this.loadProjects(this.showArchivedProjects);
         this.message = "项目初始化完成";
       } catch (error) {
+        try {
+          await this.refreshAll();
+          await this.loadProjects(this.showArchivedProjects);
+        } catch {
+          // Keep the original error message.
+        }
         this.message = `项目初始化失败：${getErrorMessage(error, "请检查输入文件")}`;
         throw error;
       } finally {
@@ -261,6 +327,7 @@ export const useProjectStore = defineStore("project", {
       this.selectedScene =
         this.script.scenes?.find((scene) => scene.scene_id === this.selectedSceneId) || null;
     },
+    /** 刷新全部项目数据：项目详情、章节、版本、剧本、场景 */
     async refreshAll() {
       if (!this.projectId) {
         return;
@@ -342,6 +409,7 @@ export const useProjectStore = defineStore("project", {
         this.loading = false;
       }
     },
+    /** 执行 AI 场景重写 */
     async runRewrite(instruction) {
       if (!this.projectId || !this.selectedSceneId) {
         return;
@@ -365,28 +433,17 @@ export const useProjectStore = defineStore("project", {
         this.loading = false;
       }
     },
+    /** 执行剧本导出（直接触发浏览器下载，不写服务器磁盘） */
     async runExport(format = "yaml") {
       if (!this.projectId) {
         return;
       }
-      this.loading = true;
-      this.message = "正在导出";
-      try {
-        const response = await exportScript(this.projectId, {
-          version_id: this.activeVersionId || undefined,
-          format,
-          include_report: true
-        });
-        const task = await waitTask(response.data.task_id);
-        this.exportResult = task.result;
-        this.message = "导出完成";
-      } catch (error) {
-        this.message = `导出失败：${getErrorMessage(error, "请稍后重试")}`;
-        throw error;
-      } finally {
-        this.loading = false;
-      }
+      const url = getExportDownloadUrl(this.projectId, format, true);
+      this.exportResult = { download_url: url, file_name: `${this.project?.title || "script"}.${format}` };
+      this.message = "导出完成";
+      window.open(url, "_blank");
     },
+    /** 对比两个版本之间的差异 */
     async compareVersionPair(baseVersionId, targetVersionId) {
       if (!this.projectId || !baseVersionId || !targetVersionId) {
         this.versionCompare = null;

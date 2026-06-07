@@ -1,3 +1,5 @@
+"""API 端到端流程测试：测试完整工作流从创建项目到导出。"""
+
 def create_project(client) -> str:
     response = client.post("/api/v1/projects", json={"title": "测试项目", "language": "zh-CN"})
     assert response.status_code == 201

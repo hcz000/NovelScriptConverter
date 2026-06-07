@@ -1,7 +1,7 @@
+"""兼容性门面（Facade）：将所有服务模块的函数重新导出，供路由和测试统一引用。
+实际实现分散在各个小模块中，pipeline.py 仅做聚合导出。"""
 from __future__ import annotations
 
-# Compatibility facade: route and tests can keep importing from pipeline while
-# the implementation lives in smaller service modules.
 from app.core import config
 from app.services.common import (
     PROJECT_GENERATING,
@@ -63,8 +63,10 @@ from app.services.script_builder import (
     infer_scene_pacing,
     infer_scene_style,
     infer_time_of_day,
+    llm_extract_characters,
     llm_generate_script,
     summarize_paragraph_group,
+    validate_character_names,
 )
 from app.services.script_ops import (
     clone_script,

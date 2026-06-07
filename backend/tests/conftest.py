@@ -1,3 +1,4 @@
+"""Pytest 共享夹具（fixtures）：提供临时 SQLite 存储和 API 测试客户端。"""
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -6,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+# 确保 backend 根目录在 sys.path 中
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
@@ -17,11 +19,15 @@ from app.main import http_exception_handler, unhandled_exception_handler
 
 @pytest.fixture()
 def temp_store(tmp_path: Path) -> DataStore:
+    """创建临时 SQLite 数据库的 DataStore 实例。"""
     return DataStore(tmp_path / "studio.sqlite3")
 
 
 @pytest.fixture()
 def app_client(temp_store: DataStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """创建使用临时存储和临时目录的 FastAPI TestClient。
+    通过 monkeypatch 替换配置中的路径和 store 引用，确保测试隔离。
+    """
     from app import main as app_main
     from app import services
 

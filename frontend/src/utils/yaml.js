@@ -1,3 +1,6 @@
+/** YAML 序列化工具：纯 JavaScript 实现的轻量级 YAML 格式化器。 */
+
+/** 将标量值（字符串/数字/布尔/null）格式化为 YAML 表示 */
 function formatScalar(value) {
   if (typeof value === "string") {
     return JSON.stringify(value);
@@ -67,6 +70,7 @@ function serializeValue(value, depth) {
     .join("\n");
 }
 
+/** 将 JavaScript 对象序列化为 YAML 格式字符串 */
 export function toYaml(value) {
   return serializeValue(value, 0);
 }

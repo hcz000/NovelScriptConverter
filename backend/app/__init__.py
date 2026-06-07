@@ -1,1 +1,1 @@
-# Backend package for AI Adaptation Studio.
+# AI剧本改编工作台 - 后端包初始化文件。
